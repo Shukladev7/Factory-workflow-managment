@@ -46,7 +46,7 @@ export async function chatWithData(input: ChatInput): Promise<ChatOutput> {
 
 const chatPrompt = ai.definePrompt({
   name: 'chatPrompt',
-  model: googleAI.model('gemini-1.5-flash'),
+  model: googleAI.model('gemini-2.5-flash'),
   input: { schema: z.object({ question: z.string(), context: z.string() }) },
   output: { schema: ChatOutputSchema },
   prompt: `

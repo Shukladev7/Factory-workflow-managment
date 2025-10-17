@@ -17,6 +17,7 @@ import { format } from "date-fns"
 import { Badge } from "./ui/badge"
 import { Progress } from "./ui/progress"
 import { EditBatchForm } from "./edit-batch-form"
+import { TruncatedId } from "./ui/data-table"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -187,7 +188,7 @@ export function BatchDetailsDialog({
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <strong>Batch ID:</strong> <span className="font-mono text-sm">{batch.id}</span>
+          <strong>Batch ID:</strong> <TruncatedId id={batch.id} maxLength={16} />
         </div>
         <div>
           <strong>Created:</strong> {format(new Date(batch.createdAt), "MM/dd/yyyy")}
@@ -289,9 +290,12 @@ export function BatchDetailsDialog({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEditing ? `Edit Batch ${batch.id}` : `Batch Details: ${batch.id}`}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {isEditing ? "Edit Batch" : "Batch Details:"}
+            <TruncatedId id={batch.id} maxLength={12} />
+          </DialogTitle>
           <DialogDescription>
-            {isEditing ? "Update the details for this batch." : `Viewing details and activity for batch ${batch.id}.`}
+            {isEditing ? "Update the details for this batch." : "Viewing details and activity for this production batch."}
           </DialogDescription>
         </DialogHeader>
 
@@ -314,7 +318,10 @@ export function BatchDetailsDialog({
                     <AlertDialogHeader>
                       <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This action cannot be undone. This will permanently delete batch {batch.id}.
+                        <div className="flex items-center gap-2">
+                          This action cannot be undone. This will permanently delete batch
+                          <TruncatedId id={batch.id} maxLength={10} />
+                        </div>
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
