@@ -26,6 +26,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/use-permissions";
+import { canEditProcessingStage } from "@/lib/permissions";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import {
@@ -74,12 +75,12 @@ export function BatchStageProcessor({
     useRawMaterials();
   const { finalStock, createFinalStock } = useFinalStock();
   const { createActivityLog } = useActivityLog();
-  const { canEdit } = usePermissions();
+  const { employee } = usePermissions();
   const { toast } = useToast();
   const router = useRouter();
   
   // Check if user has permission to edit this stage
-  const canEditStage = canEdit(stage as any);
+  const canEditStage = employee ? canEditProcessingStage(employee.role, stage) : false;
 
   useEffect(() => {
     console.log("[v0] Setting up real-time subscription for stage:", stage);

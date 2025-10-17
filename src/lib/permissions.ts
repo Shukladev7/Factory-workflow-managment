@@ -1,4 +1,4 @@
-import type { Role, AppModule } from "./types";
+import type { Role, AppModule, ProcessingStageName } from "./types";
 
 export interface RolePermissions {
   canEdit: AppModule[];
@@ -6,10 +6,10 @@ export interface RolePermissions {
 
 export const ROLE_PERMISSIONS: Record<Role, RolePermissions> = {
   admin: {
-    canEdit: ["Raw Materials", "Store", "Batches", "Final Stock", "Reports", "Setup"]
+    canEdit: ["Raw Materials", "Store", "Batches", "Final Stock", "Reports", "Setup", "Moulding", "Machining", "Assembling", "Testing"]
   },
   storeManager: {
-    canEdit: ["Raw Materials", "Store", "Batches", "Final Stock", "Reports"]
+    canEdit: ["Raw Materials", "Store", "Batches", "Final Stock", "Reports", "Moulding", "Machining", "Assembling", "Testing"]
   },
   mouldingManager: {
     canEdit: ["Moulding"]
@@ -47,6 +47,30 @@ export function canViewModule(_role: Role, _module: AppModule): boolean {
  */
 export function canEditModule(role: Role, module: AppModule): boolean {
   return ROLE_PERMISSIONS[role].canEdit.includes(module);
+}
+
+/**
+ * Map ProcessingStageName to corresponding AppModule for permission checks
+ */
+export function mapProcessingStageToModule(stage: ProcessingStageName): AppModule {
+  switch (stage) {
+    case "Molding":
+      return "Moulding";
+    case "Machining":
+      return "Machining";
+    case "Assembling":
+      return "Assembling";
+    case "Testing":
+      return "Testing";
+  }
+}
+
+/**
+ * Check if a role has permission to edit a specific processing stage
+ */
+export function canEditProcessingStage(role: Role, stage: ProcessingStageName): boolean {
+  const appModule = mapProcessingStageToModule(stage);
+  return canEditModule(role, appModule);
 }
 
 /**
