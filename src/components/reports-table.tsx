@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { formatMsToHMS } from "@/lib/utils"
+import { formatMsToHMS, formatNumber } from "@/lib/utils"
 
 type ReportRow = {
   dateISO: string
@@ -98,6 +98,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
     const headers = [
       "Date",
       "Batch ID",
+      "Total Units",
       "Product Name",
       "Status",
       "Final Output (units)",
@@ -113,6 +114,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
       const row = [
         formatYMD(d),
         r.batchId,
+        String(r.finalOutput ?? 0),
         r.productName.replaceAll(",", " "),
         r.status,
         String(r.finalOutput ?? 0),
@@ -177,34 +179,12 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
       </div>
 
       <div className="rounded-lg border bg-card">
-        <div className="p-4">
-          <h3 className="font-semibold">Total Units </h3>
-          {!dateFilterActive ? (
-            <div className="mt-2 grid gap-1">
-              <div className="text-sm flex items-center justify-between">
-                <span className="text-muted-foreground">Today ({todayYMD})</span>
-                <span className="font-medium">{todayTotal} units</span>
-              </div>
-            </div>
-          ) : dailyTotals.length === 0 ? (
-            <p className="text-sm text-muted-foreground mt-1">No data.</p>
-          ) : (
-            <div className="mt-2 grid gap-1">
-              {dailyTotals.map(({ day, total }) => (
-                <div key={day} className="text-sm flex items-center justify-between">
-                  <span className="text-muted-foreground">{day}</span>
-                  <span className="font-medium">{total} units</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="border-t">
-          <Table>
+        <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
                 <TableHead>Batch ID</TableHead>
+                <TableHead>Total Units</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Final Output</TableHead>
@@ -217,7 +197,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center text-muted-foreground">
                     No records match your filters.
                   </TableCell>
                 </TableRow>
@@ -229,9 +209,10 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
                     <TableRow key={`${r.batchId}-${formatYMD(d)}`}>
                       <TableCell>{formatHuman(d)}</TableCell>
                       <TableCell className="font-mono text-sm">{r.batchId}</TableCell>
+                      <TableCell className="font-medium">{formatNumber(r.finalOutput || 0)}</TableCell>
                       <TableCell>{r.productName}</TableCell>
                       <TableCell>{r.status}</TableCell>
-                      <TableCell className="text-right">{r.finalOutput}</TableCell>
+                      <TableCell className="text-right">{formatNumber(r.finalOutput || 0)}</TableCell>
                       <TableCell className="text-right">
                         {dur.Molding != null ? formatMsToHMS(dur.Molding) : "-"}
                       </TableCell>
@@ -250,7 +231,6 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
               )}
             </TableBody>
           </Table>
-        </div>
       </div>
     </div>
   )

@@ -24,3 +24,7 @@ export function formatMsToHMS(ms: number): string {
   const secs = (totalSeconds % 60).toString().padStart(2, "0")
   return `${hrs}:${mins}:${secs}`
 }
+
+export function formatNumber(num: number): string {
+  return new Intl.NumberFormat('en-US').format(num)
+}
