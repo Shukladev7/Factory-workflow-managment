@@ -32,40 +32,46 @@ export function SuggestionChart({ title, data }: SuggestionChartProps) {
     };
 
   return (
-    <Card className="border-dashed">
-      <CardHeader className="p-4 pb-0">
-        <CardTitle className="text-base">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="p-4 pt-2">
+    <div className="w-full h-full min-h-0 overflow-hidden">
+      {title && (
+        <div className="pb-2">
+          <h4 className="text-xs font-medium truncate">{title}</h4>
+        </div>
+      )}
+      <div className="w-full h-full">
         <ChartContainer
           config={chartConfig}
-          className="h-[150px] w-full"
+          className="w-full h-full min-h-0"
         >
           <BarChart
             data={data}
-            layout="horizontal"
-            margin={{ left: 10, right: 10, top: 10, bottom: 0 }}
+            margin={{ left: 5, right: 5, top: 5, bottom: 5 }}
           >
-            <CartesianGrid vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted-foreground))" opacity={0.2} />
             <XAxis
               dataKey="name"
-              type="category"
               tickLine={false}
               axisLine={false}
-              tickMargin={8}
-              className="text-xs"
+              className="text-[10px] fill-muted-foreground"
+              interval={0}
+              angle={-45}
+              textAnchor="end"
+              height={40}
             />
-            <YAxis dataKey="value" type="number" />
+            <YAxis 
+              tickLine={false}
+              axisLine={false}
+              className="text-[10px] fill-muted-foreground"
+            />
             <ChartTooltip
-              cursor={{ fill: 'hsl(var(--muted))' }}
+              cursor={{ fill: 'hsl(var(--muted))', opacity: 0.3 }}
               content={<ChartTooltipContent />}
             />
-            <Legend />
-            <Bar dataKey="value" fill="var(--color-value)" radius={4} />
-            {hasThreshold && <Bar dataKey="threshold" fill="var(--color-threshold)" radius={4} />}
+            <Bar dataKey="value" fill="var(--color-value)" radius={[2, 2, 0, 0]} />
+            {hasThreshold && <Bar dataKey="threshold" fill="var(--color-threshold)" radius={[2, 2, 0, 0]} />}
           </BarChart>
         </ChartContainer>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

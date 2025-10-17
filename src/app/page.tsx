@@ -28,6 +28,8 @@ export default function DashboardPage() {
   const { rawMaterials } = useRawMaterials()
   const [suggestions, setSuggestions] = useState<ProductionSuggestion[]>([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(true)
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
   const [isClient, setIsClient] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<string>("All")
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null)
@@ -67,6 +69,8 @@ export default function DashboardPage() {
       if (completedBatches.length > 0 && rawMaterials.length > 0) {
         try {
           setLoadingSuggestions(true)
+          setSuggestionsError(null)
+          setRetryCount(0)
           const result = await getProductionSuggestions({
             batches: completedBatches.slice(-10), // Last 10 completed batches for performance
             rawMaterials: rawMaterials
@@ -74,17 +78,41 @@ export default function DashboardPage() {
           setSuggestions(result.suggestions)
         } catch (error) {
           console.error("Failed to load AI suggestions:", error)
+          setSuggestionsError("Failed to generate AI insights. Using fallback suggestions.")
           setSuggestions([])
         }
       } else {
         // Use fallback when insufficient data
         setSuggestions([])
+        setSuggestionsError(null)
       }
       setLoadingSuggestions(false)
     }
 
     loadSuggestions()
   }, [isClient, completedBatches, rawMaterials])
+  
+  const retryAISuggestions = async () => {
+    if (retryCount >= 2) return; // Max 2 retries
+    
+    setRetryCount(prev => prev + 1)
+    setLoadingSuggestions(true)
+    setSuggestionsError(null)
+    
+    try {
+      const result = await getProductionSuggestions({
+        batches: completedBatches.slice(-10),
+        rawMaterials: rawMaterials
+      })
+      setSuggestions(result.suggestions)
+      setRetryCount(0)
+    } catch (error) {
+      console.error("Retry failed:", error)
+      setSuggestionsError("Failed to generate AI insights. Using fallback suggestions.")
+    } finally {
+      setLoadingSuggestions(false)
+    }
+  }
   const inProgressBatches = useMemo(() => batches.filter((b) => b.status === "In Progress"), [batches])
   const pendingBatches = useMemo(() => batches.filter((b) => b.status === "Pending" || b.status === "Created"), [batches])
 
@@ -515,19 +543,48 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {loadingSuggestions ? (
-              <div className="grid gap-4 md:grid-cols-3">
-                <Skeleton className="h-20 w-full" />
-                <Skeleton className="h-20 w-full" />
-                <Skeleton className="h-20 w-full" />
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full"></div>
+                  Generating AI insights...
+                </div>
+                <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+                  <Skeleton className="h-32 w-full" />
+                  <Skeleton className="h-32 w-full" />
+                  <Skeleton className="h-32 w-full" />
+                </div>
+              </div>
+            ) : suggestionsError ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between text-sm text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    {suggestionsError}
+                  </div>
+                  {retryCount < 2 && (
+                    <button 
+                      onClick={retryAISuggestions}
+                      className="text-xs px-2 py-1 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded transition-colors"
+                      disabled={loadingSuggestions}
+                    >
+                      {loadingSuggestions ? 'Retrying...' : 'Retry AI'}
+                    </button>
+                  )}
+                </div>
+                <FallbackAISuggestions 
+                  completedBatches={completedBatches}
+                  wastageData={wastageData}
+                  outOfStockMaterials={outOfStockMaterials}
+                />
               </div>
             ) : suggestions.length > 0 ? (
               <div className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
                   {suggestions.slice(0, 3).map((suggestion, index) => (
-                    <div key={index} className="p-4 bg-background/50 rounded-lg border">
-                      <h4 className="font-semibold text-sm mb-2">{suggestion.suggestion}</h4>
-                      <p className="text-xs text-muted-foreground mb-3">{suggestion.reasoning}</p>
-                      <div className="h-20">
+                    <div key={index} className="flex flex-col p-4 bg-background/50 rounded-lg border min-h-0">
+                      <h4 className="font-semibold text-sm mb-2 line-clamp-2 break-words">{suggestion.suggestion}</h4>
+                      <p className="text-xs text-muted-foreground mb-3 line-clamp-3 break-words flex-grow">{suggestion.reasoning}</p>
+                      <div className="h-20 w-full flex-shrink-0 overflow-hidden">
                         <SuggestionChart title="" data={suggestion.chart.data} />
                       </div>
                     </div>
@@ -540,12 +597,12 @@ export default function DashboardPage() {
                         View {suggestions.length - 3} more suggestions
                       </AccordionTrigger>
                       <AccordionContent>
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
                           {suggestions.slice(3).map((suggestion, index) => (
-                            <div key={index + 3} className="p-4 bg-background/50 rounded-lg border">
-                              <h4 className="font-semibold text-sm mb-2">{suggestion.suggestion}</h4>
-                              <p className="text-xs text-muted-foreground mb-3">{suggestion.reasoning}</p>
-                              <div className="h-20">
+                            <div key={index + 3} className="flex flex-col p-4 bg-background/50 rounded-lg border min-h-0">
+                              <h4 className="font-semibold text-sm mb-2 line-clamp-2 break-words">{suggestion.suggestion}</h4>
+                              <p className="text-xs text-muted-foreground mb-3 line-clamp-3 break-words flex-grow">{suggestion.reasoning}</p>
+                              <div className="h-20 w-full flex-shrink-0 overflow-hidden">
                                 <SuggestionChart title="" data={suggestion.chart.data} />
                               </div>
                             </div>

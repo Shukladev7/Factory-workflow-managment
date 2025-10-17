@@ -41,6 +41,17 @@ const ProductionAnalysisOutputSchema = z.object({
 export type ProductionAnalysisOutput = z.infer<typeof ProductionAnalysisOutputSchema>;
 
 
+// Simple in-memory cache
+const suggestionCache = new Map<string, { data: ProductionAnalysisOutput; timestamp: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+function getCacheKey(input: ProductionAnalysisInput): string {
+  // Create a simple hash based on data length and recent batch IDs
+  const recentBatchIds = input.batches.slice(-5).map(b => b.id).join(',');
+  const materialCounts = input.rawMaterials.map(m => `${m.id}:${m.quantity}`).slice(0, 10).join(',');
+  return `${recentBatchIds}|${materialCounts}`;
+}
+
 export async function getProductionSuggestions(input: ProductionAnalysisInput): Promise<ProductionAnalysisOutput> {
   try {
     // Validate input data
@@ -50,67 +61,35 @@ export async function getProductionSuggestions(input: ProductionAnalysisInput): 
     if (!input.rawMaterials || input.rawMaterials.length === 0) {
       throw new Error("No raw material data provided");
     }
+    
+    // Check cache first
+    const cacheKey = getCacheKey(input);
+    const cached = suggestionCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+      console.log('Returning cached AI suggestions');
+      return cached.data;
+    }
 
-    // Convert custom types to a JSON-serializable format for the prompt
+    // Convert custom types to a more compact JSON-serializable format
     const serializableInput = {
-        batches: JSON.stringify(input.batches.map(b => {
+        batches: JSON.stringify(input.batches.slice(-5).map(b => { // Only use last 5 batches for speed
           const processingStages = b.processingStages || {};
-          const createdDate = new Date(b.createdAt);
-          const currentDate = new Date();
-          const cycleDays = (currentDate.getTime() - createdDate.getTime()) / (1000 * 3600 * 24);
+          const totalAccepted = Object.values(processingStages).reduce((sum: number, stage: any) => sum + (stage?.accepted || 0), 0);
+          const totalRejected = Object.values(processingStages).reduce((sum: number, stage: any) => sum + (stage?.rejected || 0), 0);
           
           return {
-            id: b.id,
-            productName: b.productName || 'Unknown Product',
+            productName: b.productName || 'Unknown',
             status: b.status || 'Unknown',
-            createdAt: b.createdAt,
-            totalQuantity: b.quantity || 0,
-            processingStages: {
-              Molding: {
-                accepted: processingStages.Molding?.accepted || 0,
-                rejected: processingStages.Molding?.rejected || 0,
-                completed: processingStages.Molding?.completed || false
-              },
-              Machining: {
-                accepted: processingStages.Machining?.accepted || 0,
-                rejected: processingStages.Machining?.rejected || 0,
-                completed: processingStages.Machining?.completed || false
-              },
-              Assembling: {
-                accepted: processingStages.Assembling?.accepted || 0,
-                rejected: processingStages.Assembling?.rejected || 0,
-                completed: processingStages.Assembling?.completed || false
-              },
-              Testing: {
-                accepted: processingStages.Testing?.accepted || 0,
-                rejected: processingStages.Testing?.rejected || 0,
-                completed: processingStages.Testing?.completed || false
-              }
-            },
-            wastage: {
-                Molding: processingStages.Molding?.rejected || 0,
-                Machining: processingStages.Machining?.rejected || 0,
-                Assembling: processingStages.Assembling?.rejected || 0,
-                Testing: processingStages.Testing?.rejected || 0
-            },
-            totalWastage: (processingStages.Molding?.rejected || 0) + 
-                         (processingStages.Machining?.rejected || 0) + 
-                         (processingStages.Assembling?.rejected || 0) + 
-                         (processingStages.Testing?.rejected || 0),
-            cycleTime: b.status === 'Completed' ? `${cycleDays.toFixed(1)} days` : 'In Progress',
-            efficiency: calculateBatchEfficiency(processingStages)
+            totalAccepted,
+            totalRejected,
+            efficiency: totalAccepted + totalRejected > 0 ? Math.round((totalAccepted / (totalAccepted + totalRejected)) * 100) : 0
           };
         })),
-        rawMaterials: JSON.stringify(input.rawMaterials.map(m => ({
-            id: m.id,
-            name: m.name || 'Unknown Material',
-            sku: m.sku || 'N/A',
+        rawMaterials: JSON.stringify(input.rawMaterials.filter(m => (m.quantity || 0) < (m.threshold || 0) * 1.5).map(m => ({ // Only include materials that might need attention
+            name: m.name || 'Unknown',
             quantity: Math.max(0, m.quantity || 0),
             threshold: Math.max(0, m.threshold || 0),
-            unit: m.unit || 'units',
-            isLowStock: (m.quantity || 0) < (m.threshold || 0),
-            stockLevel: getStockLevel(m.quantity || 0, m.threshold || 0),
-            daysUntilStockout: estimateDaysUntilStockout(m.quantity || 0, m.threshold || 0)
+            isLowStock: (m.quantity || 0) < (m.threshold || 0)
         })))
     };
     
@@ -123,7 +102,9 @@ export async function getProductionSuggestions(input: ProductionAnalysisInput): 
     
     if (!output || !output.suggestions || output.suggestions.length === 0) {
         console.warn("AI model returned empty suggestions, using fallback");
-        return generateFallbackSuggestions(input);
+        const fallbackResult = generateFallbackSuggestions(input);
+        suggestionCache.set(cacheKey, { data: fallbackResult, timestamp: Date.now() });
+        return fallbackResult;
     }
     
     // Validate and sanitize AI output
@@ -139,11 +120,18 @@ export async function getProductionSuggestions(input: ProductionAnalysisInput): 
         }
       }));
     
-    return { suggestions: validatedSuggestions };
+    const result = { suggestions: validatedSuggestions };
+    // Cache the result
+    suggestionCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    return result;
     
   } catch (error) {
     console.error('AI suggestion generation failed:', error);
-    return generateFallbackSuggestions(input);
+    const fallbackResult = generateFallbackSuggestions(input);
+    // Cache fallback results too to avoid repeated failures
+    const cacheKey = getCacheKey(input);
+    suggestionCache.set(cacheKey, { data: fallbackResult, timestamp: Date.now() });
+    return fallbackResult;
   }
 }
 
@@ -246,7 +234,7 @@ function generateFallbackSuggestions(input: ProductionAnalysisInput): Production
 
 const productionAnalysisPrompt = ai.definePrompt({
     name: 'productionAnalysisPrompt',
-    model: googleAI.model('gemini-2.5-flash'),
+    model: googleAI.model('gemini-1.5-flash'),
     input: { schema: z.object({ batches: z.string(), rawMaterials: z.string() }) },
     output: { schema: ProductionAnalysisOutputSchema },
     prompt: `
