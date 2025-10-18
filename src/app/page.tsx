@@ -971,7 +971,7 @@ export default function DashboardPage() {
                           x={Math.max(...wastageData.filter(d => d.rejected > 0).map(d => d.rejected)) * 0.5} 
                           stroke="hsl(var(--muted-foreground))"
                           strokeDasharray="5 5"
-                          label={{ value: "Target Threshold", position: "insideTopRight", fontSize: 10 }}
+                          label={{ value: "Target Threshold", position: "top", fontSize: 10 }}
                         />
                       )}
                     </BarChart>
