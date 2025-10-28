@@ -14,7 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { FinalStock } from "@/lib/types";
-import { PlusCircle, MoreHorizontal, FileDown, Upload } from "lucide-react";
+import { PlusCircle, MoreHorizontal, FileDown, Upload, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { useFinalStock } from "@/hooks/use-final-stock";
 import { useActivityLog } from "@/hooks/use-activity-log";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -60,6 +61,7 @@ export default function ProductsPage() {
     useState<GroupedProduct | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
   
   const canEditFinalStock = canEdit("Final Stock");
@@ -156,9 +158,11 @@ export default function ProductsPage() {
   };
 
   const handleProductUpdated = (updatedProduct: FinalStock) => {
-    updateFinalStock(updatedProduct.id, updatedProduct);
+    // Remove id field from updates as it shouldn't be stored as a document field
+    const { id, ...updates } = updatedProduct;
+    updateFinalStock(id, updates);
     createActivityLog({
-      recordId: updatedProduct.id,
+      recordId: id,
       recordType: "FinalStock",
       action: "Updated",
       details: `Product "${updatedProduct.name}" was updated.`,
@@ -375,6 +379,15 @@ export default function ProductsPage() {
     return null;
   }
 
+  const filteredProducts = groupedProducts.filter((group) => {
+    const query = searchQuery.toLowerCase();
+    return (
+      group.productName.toLowerCase().includes(query) ||
+      group.firstEntry.sku.toLowerCase().includes(query) ||
+      group.firstEntry.id.toLowerCase().includes(query)
+    );
+  });
+
   return (
     <>
       <PageHeader
@@ -420,6 +433,17 @@ export default function ProductsPage() {
           </Dialog>
         )}
       </PageHeader>
+      <div className="mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by name, SKU, or System ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+      </div>
       <Card>
         <CardContent className="pt-6">
           <Table>
@@ -435,8 +459,15 @@ export default function ProductsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {groupedProducts.map((group) => (
-                <TableRow key={group.productName}>
+              {filteredProducts.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                    No products found matching your search.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredProducts.map((group) => (
+                  <TableRow key={group.productName}>
                   <TableCell>
                     <div className="relative w-16 h-12 rounded-md overflow-hidden">
                       <Image
@@ -478,7 +509,8 @@ export default function ProductsPage() {
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>
-              ))}
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

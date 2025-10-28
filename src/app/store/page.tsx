@@ -6,7 +6,8 @@ import PageHeader from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Package, MoreHorizontal, FileDown } from "lucide-react"
+import { Package, MoreHorizontal, FileDown, Search } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import type { RawMaterial } from "@/lib/types"
 import { useRawMaterials } from "@/hooks/use-raw-materials"
@@ -29,6 +30,7 @@ export default function StorePage() {
   const [selectedItem, setSelectedItem] = useState<RawMaterial | null>(null)
   const [isRestockOpen, setIsRestockOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
   const { toast } = useToast()
   
   const canEditStore = canEdit("Store")
@@ -171,6 +173,15 @@ export default function StorePage() {
     return null
   }
 
+  const filterMaterials = (materials: RawMaterial[]) => {
+    const query = searchQuery.toLowerCase()
+    return materials.filter((material) => 
+      material.name.toLowerCase().includes(query) ||
+      material.sku.toLowerCase().includes(query) ||
+      material.id.toLowerCase().includes(query)
+    )
+  }
+
   const renderMaterialsTable = (materials: RawMaterial[], title: string) => (
     <Card>
       <CardContent className="pt-6">
@@ -274,6 +285,18 @@ export default function StorePage() {
         {/* Raw materials export/button removed */}
       </PageHeader>
 
+      <div className="mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by name, SKU, or System ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+      </div>
+
       <Tabs defaultValue="moulded" className="space-y-4">
         <TabsList>
           <TabsTrigger value="moulded">
@@ -292,11 +315,11 @@ export default function StorePage() {
         </TabsList>
 
         <TabsContent value="moulded">
-          {renderMaterialsTable(mouldedMaterials, "Moulded Materials")}
+          {renderMaterialsTable(filterMaterials(mouldedMaterials), "Moulded Materials")}
         </TabsContent>
 
         <TabsContent value="finished">
-          {renderMaterialsTable(finishedMaterials, "Machined Materials")}
+          {renderMaterialsTable(filterMaterials(finishedMaterials), "Machined Materials")}
         </TabsContent>
 
         {/* Raw tab removed entirely */}

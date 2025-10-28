@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { RawMaterial } from "@/lib/types"
-import { PlusCircle, AlertTriangle, MoreHorizontal, FileDown, XCircle, Upload } from "lucide-react"
+import { PlusCircle, AlertTriangle, MoreHorizontal, FileDown, XCircle, Upload, Search } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { useRawMaterials } from "@/hooks/use-raw-materials"
 import { useActivityLog } from "@/hooks/use-activity-log"
@@ -36,6 +37,7 @@ export default function MaterialsPage() {
   const [restockItem, setRestockItem] = useState<RawMaterial | null>(null)
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [isClient, setIsClient] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
   const { toast } = useToast()
   
   const canEditMaterials = canEdit("Raw Materials")
@@ -296,6 +298,15 @@ export default function MaterialsPage() {
     return null
   }
 
+  const filteredMaterials = rawMaterials.filter((material) => {
+    const query = searchQuery.toLowerCase()
+    return (
+      material.name.toLowerCase().includes(query) ||
+      material.sku.toLowerCase().includes(query) ||
+      material.id.toLowerCase().includes(query)
+    )
+  })
+
   return (
     <>
       <PageHeader title="Raw Materials" description="Monitor incoming raw materials and current stock levels.">
@@ -335,6 +346,17 @@ export default function MaterialsPage() {
           </Dialog>
         )}
       </PageHeader>
+      <div className="mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by name, SKU, or System ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+      </div>
       <Card>
         <CardContent className="pt-6">
           <Table>
@@ -350,35 +372,43 @@ export default function MaterialsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rawMaterials.map((material) => (
-                <TableRow key={material.id}>
-                  <TableCell className="font-mono text-xs">{material.id}</TableCell>
-                  <TableCell className="font-medium">{material.name}</TableCell>
-                  <TableCell className="font-mono text-xs">{material.sku}</TableCell>
-                  <TableCell>
-                    {material.quantity.toLocaleString()} {material.unit}
-                  </TableCell>
-                  <TableCell>
-                    {material.threshold.toLocaleString()} {material.unit}
-                  </TableCell>
-                  <TableCell>{getStatus(material)}</TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => handleViewDetails(material)}>View Details</DropdownMenuItem>
-                        {canEditMaterials && (
-                          <DropdownMenuItem onClick={() => handleOpenRestock(material)}>Restock</DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+              {filteredMaterials.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                    No materials found matching your search.
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                filteredMaterials.map((material) => (
+                  <TableRow key={material.id}>
+                    <TableCell className="font-mono text-xs">{material.id}</TableCell>
+                    <TableCell className="font-medium">{material.name}</TableCell>
+                    <TableCell className="font-mono text-xs">{material.sku}</TableCell>
+                    <TableCell>
+                      {material.quantity.toLocaleString()} {material.unit}
+                    </TableCell>
+                    <TableCell>
+                      {material.threshold.toLocaleString()} {material.unit}
+                    </TableCell>
+                    <TableCell>{getStatus(material)}</TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          <DropdownMenuItem onClick={() => handleViewDetails(material)}>View Details</DropdownMenuItem>
+                          {canEditMaterials && (
+                            <DropdownMenuItem onClick={() => handleOpenRestock(material)}>Restock</DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

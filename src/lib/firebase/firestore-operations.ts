@@ -137,7 +137,13 @@ export async function updateFinalStock(
   updates: Partial<FinalStock>,
 ) {
   const stockRef = doc(db, COLLECTIONS.FINAL_STOCK, id);
-  await updateDoc(stockRef, updates);
+  
+  // Remove undefined fields as Firestore doesn't allow them
+  const cleanedUpdates = Object.fromEntries(
+    Object.entries(updates).filter(([_, value]) => value !== undefined)
+  );
+  
+  await updateDoc(stockRef, cleanedUpdates);
 }
 
 export async function deleteFinalStock(id: string) {
