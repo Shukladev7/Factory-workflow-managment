@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { FinalStock } from "@/lib/types";
-import { PlusCircle, MoreHorizontal, FileDown, Upload, Search } from "lucide-react";
+import { PlusCircle, MoreHorizontal, FileDown, Upload, Search, AlertTriangle, XCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useFinalStock } from "@/hooks/use-final-stock";
 import { useActivityLog } from "@/hooks/use-activity-log";
@@ -39,6 +39,7 @@ import { ItemDetailsDialog } from "@/components/item-details-dialog";
 import * as XLSX from "xlsx";
 import { CSVImportDialog } from "@/components/csv-import-dialog";
 import { ProductDetailsDialog } from "@/components/product-details-dialog";
+import { Badge } from "@/components/ui/badge";
 
 // Grouped product interface
 interface GroupedProduct {
@@ -379,12 +380,30 @@ export default function ProductsPage() {
     return null;
   }
 
+  const getStatus = (quantity: number, threshold: number = 0) => {
+    if (quantity <= 0) {
+      return (
+        <Badge variant="destructive" className="flex items-center gap-1 w-fit">
+          <XCircle className="h-3 w-3" /> Out of Stock
+        </Badge>
+      )
+    }
+    if (threshold > 0 && quantity < threshold) {
+      return (
+        <Badge variant="destructive" className="flex items-center gap-1 w-fit">
+          <AlertTriangle className="h-3 w-3" /> Low Stock
+        </Badge>
+      )
+    }
+    return <Badge variant="secondary">In Stock</Badge>
+  }
+
   const filteredProducts = groupedProducts.filter((group) => {
     const query = searchQuery.toLowerCase();
     return (
       group.productName.toLowerCase().includes(query) ||
       group.firstEntry.sku.toLowerCase().includes(query) ||
-      group.firstEntry.id.toLowerCase().includes(query)
+      (group.firstEntry.productId?.toLowerCase() || "").includes(query)
     );
   });
 
@@ -437,7 +456,7 @@ export default function ProductsPage() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search by name, SKU, or System ID..."
+            placeholder="Search by name, SKU, or Product ID..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
@@ -450,9 +469,12 @@ export default function ProductsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[80px]">Image</TableHead>
-                <TableHead>System ID</TableHead>
+                <TableHead>Product ID</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>SKU</TableHead>
+                <TableHead>Quantity</TableHead>
+                <TableHead>Low Stock Threshold</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Unit Price</TableHead>
                 <TableHead>GST Rate</TableHead>
                 <TableHead className="text-right w-[60px]">Actions</TableHead>
@@ -480,13 +502,25 @@ export default function ProductsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    {group.firstEntry.id}
+                    {group.firstEntry.productId || "—"}
                   </TableCell>
                   <TableCell className="font-medium">
                     {group.productName}
                   </TableCell>
                   <TableCell className="font-mono text-xs">
                     {group.firstEntry.sku}
+                  </TableCell>
+                  <TableCell>
+                    {group.batches.reduce((sum, b) => sum + Number(b.fullEntry.quantity ?? 0), 0)} pcs
+                  </TableCell>
+                  <TableCell>
+                    {group.productTemplate?.threshold ?? 0} pcs
+                  </TableCell>
+                  <TableCell>
+                    {getStatus(
+                      group.batches.reduce((sum, b) => sum + Number(b.fullEntry.quantity ?? 0), 0),
+                      group.productTemplate?.threshold ?? 0
+                    )}
                   </TableCell>
                   <TableCell>
                     ₹{group.firstEntry.price.toLocaleString()}

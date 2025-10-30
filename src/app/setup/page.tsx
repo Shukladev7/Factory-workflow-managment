@@ -53,6 +53,8 @@ const initialUnits: UnitOfMeasure[] = [
 export default function SetupPage() {
   const [units, setUnits] = useLocalStorage<UnitOfMeasure[]>("unitsOfMeasure", initialUnits)
   const [newUnit, setNewUnit] = useState("")
+  const [orderTypes, setOrderTypes] = useLocalStorage<string[]>("orderTypes", [])
+  const [newOrderType, setNewOrderType] = useState("")
   const {
     employees,
     loading: employeesLoading,
@@ -202,9 +204,10 @@ export default function SetupPage() {
   return (
     <>
       <PageHeader title="Setup" description="Manage application-wide settings and lists." />
-      <Tabs defaultValue="employees">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs defaultValue="units">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="units">Units of Measure</TabsTrigger>
+          <TabsTrigger value="orderTypes">Order Types</TabsTrigger>
           <TabsTrigger value="employees">Employee Management</TabsTrigger>
           <TabsTrigger value="data">Data Management</TabsTrigger>
         </TabsList>
@@ -249,6 +252,78 @@ export default function SetupPage() {
                     <TableRow>
                       <TableCell colSpan={2} className="h-24 text-center">
                         No units of measure defined.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="orderTypes">
+          <Card>
+            <CardHeader>
+              <CardTitle>Manage Order Types</CardTitle>
+              <CardDescription>Define order types available when creating orders.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2 mb-4">
+                <Input
+                  placeholder="Enter new order type..."
+                  value={newOrderType}
+                  onChange={(e) => setNewOrderType(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && (() => {
+                    if (newOrderType.trim() === "") {
+                      toast({ variant: "destructive", title: "Error", description: "Order type cannot be empty." })
+                      return
+                    }
+                    if (orderTypes.some((t) => t.toLowerCase() === newOrderType.trim().toLowerCase())) {
+                      toast({ variant: "destructive", title: "Error", description: "Order type already exists." })
+                      return
+                    }
+                    setOrderTypes([...(orderTypes || []), newOrderType.trim()])
+                    setNewOrderType("")
+                    toast({ title: "Success", description: "New order type added." })
+                  })()}
+                />
+                <Button onClick={() => {
+                  if (newOrderType.trim() === "") {
+                    toast({ variant: "destructive", title: "Error", description: "Order type cannot be empty." })
+                    return
+                  }
+                  if (orderTypes.some((t) => t.toLowerCase() === newOrderType.trim().toLowerCase())) {
+                    toast({ variant: "destructive", title: "Error", description: "Order type already exists." })
+                    return
+                  }
+                  setOrderTypes([...(orderTypes || []), newOrderType.trim()])
+                  setNewOrderType("")
+                  toast({ title: "Success", description: "New order type added." })
+                }}>
+                  <PlusCircle className="mr-2 h-4 w-4" /> Add Type
+                </Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="w-[100px] text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {isClient && orderTypes && orderTypes.map((t) => (
+                    <TableRow key={t}>
+                      <TableCell className="font-medium">{t}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" onClick={() => setOrderTypes(orderTypes.filter((x) => x !== t))}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {isClient && (!orderTypes || orderTypes.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={2} className="h-24 text-center">
+                        No order types defined.
                       </TableCell>
                     </TableRow>
                   )}

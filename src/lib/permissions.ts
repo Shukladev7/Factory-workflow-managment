@@ -6,10 +6,10 @@ export interface RolePermissions {
 
 export const ROLE_PERMISSIONS: Record<Role, RolePermissions> = {
   admin: {
-    canEdit: ["Raw Materials", "Store", "Batches", "Final Stock", "Reports", "Setup", "Moulding", "Machining", "Assembling", "Testing"]
+    canEdit: ["Raw Materials", "Store", "Batches", "Final Stock", "Orders", "Reports", "Setup", "Moulding", "Machining", "Assembling", "Testing"]
   },
   storeManager: {
-    canEdit: ["Raw Materials", "Store", "Batches", "Final Stock", "Reports", "Moulding", "Machining", "Assembling", "Testing"]
+    canEdit: ["Raw Materials", "Store", "Batches", "Final Stock", "Orders", "Reports", "Moulding", "Machining", "Assembling", "Testing"]
   },
   mouldingManager: {
     canEdit: ["Moulding"]

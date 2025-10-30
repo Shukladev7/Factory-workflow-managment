@@ -26,10 +26,12 @@ interface EditProductFormProps {
 
 const formSchema = z.object({
   id: z.string(),
+  productId: z.string().optional(),
   name: z.string().min(1, "Please enter a name."),
   sku: z.string().min(1, "Please enter a SKU."),
   price: z.coerce.number().min(0, "Price must be 0 or greater."),
   gstRate: z.coerce.number().min(0, "GST Rate must be 0 or greater."),
+  threshold: z.coerce.number().min(0, "Threshold must be 0 or greater.").default(0),
   imageUrl: z
     .string()
     .url("Please enter a valid URL.")
@@ -45,10 +47,12 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
     resolver: zodResolver(formSchema),
     defaultValues: {
       id: product.id ?? "",
+      productId: product.productId ?? "",
       name: product.name ?? "",
       sku: product.sku ?? "",
       price: typeof product.price !== "undefined" ? product.price : 0,
       gstRate: typeof product.gstRate !== "undefined" ? product.gstRate : 0,
+      threshold: typeof product.threshold !== "undefined" ? product.threshold : 0,
       imageUrl: product.imageUrl ?? "",
       imageHint: product.imageHint ?? "",
     },
@@ -58,10 +62,12 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
   useEffect(() => {
     form.reset({
       id: product.id ?? "",
+      productId: product.productId ?? "",
       name: product.name ?? "",
       sku: product.sku ?? "",
       price: typeof product.price !== "undefined" ? product.price : 0,
       gstRate: typeof product.gstRate !== "undefined" ? product.gstRate : 0,
+      threshold: typeof product.threshold !== "undefined" ? product.threshold : 0,
       imageUrl: product.imageUrl ?? "",
       imageHint: product.imageHint ?? "",
     });
@@ -86,10 +92,12 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
       ...product,
       // then override with the form values
       id: values.id,
+      productId: values.productId ?? product.productId,
       name: values.name,
       sku: values.sku,
       price: values.price,
       gstRate: values.gstRate,
+      threshold: values.threshold,
       imageUrl:
         values.imageUrl && values.imageUrl.length > 0
           ? values.imageUrl
@@ -106,7 +114,20 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <FormField
+            control={form.control}
+            name="productId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Product ID</FormLabel>
+                <FormControl>
+                  <Input placeholder="e.g., PROD-1001" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <FormField
             control={form.control}
             name="name"
@@ -136,7 +157,7 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <FormField
             control={form.control}
             name="price"
@@ -157,6 +178,20 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
             render={({ field }) => (
               <FormItem>
                 <FormLabel>GST Rate (%)</FormLabel>
+                <FormControl>
+                  <Input type="number" placeholder="0" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="threshold"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Low Stock Threshold</FormLabel>
                 <FormControl>
                   <Input type="number" placeholder="0" {...field} />
                 </FormControl>

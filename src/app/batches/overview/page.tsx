@@ -6,7 +6,7 @@ import PageHeader from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { PlusCircle, MoreHorizontal, FileDown } from "lucide-react"
+import { PlusCircle, MoreHorizontal, FileDown, Eye } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import type { Batch, BatchStatus } from "@/lib/types"
 import {
@@ -57,6 +57,8 @@ export default function BatchesOverviewPage() {
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false)
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null)
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
+  const [wastageBatch, setWastageBatch] = useState<Batch | null>(null)
+  const [isWastageOpen, setIsWastageOpen] = useState(false)
   const [isClient, setIsClient] = useState(false)
   const { toast } = useToast()
   
@@ -229,6 +231,7 @@ export default function BatchesOverviewPage() {
                 <TableHead>Selected Processes</TableHead>
                 <TableHead>Date Created</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Wastage</TableHead>
                 <TableHead className="text-right w-[60px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -254,6 +257,11 @@ export default function BatchesOverviewPage() {
                         <span className={`h-2 w-2 rounded-full ${statusColors[currentStatus]}`} />
                         {getStatusLabel(batch)}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="outline" size="sm" onClick={() => { setWastageBatch(batch); setIsWastageOpen(true) }}>
+                        <Eye className="h-4 w-4 mr-1" /> View
+                      </Button>
                     </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
@@ -307,6 +315,44 @@ export default function BatchesOverviewPage() {
           onBatchUpdate={handleBatchUpdated}
           onBatchDelete={handleBatchDeleted}
         />
+      )}
+
+      {/* Wastage Modal */}
+      {wastageBatch && (
+        <Dialog open={isWastageOpen} onOpenChange={setIsWastageOpen}>
+          <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Wastage — Batch {wastageBatch.id}</DialogTitle>
+              <DialogDescription>Process-wise consumption and quality metrics</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              {(wastageBatch.selectedProcesses || []).map((stage) => {
+                const stageData = wastageBatch.processingStages[stage]
+                const mats = wastageBatch.materials.filter(m => m.stage === stage)
+                const unit = mats[0]?.unit || "units"
+                const planned = mats.reduce((s, m) => s + Number(m.quantity || 0), 0)
+                const mc: Record<string, number> | undefined = (stageData as any)?.materialConsumptions
+                const mcSum = mc ? Object.values(mc).reduce((a, v) => a + Number(v || 0), 0) : 0
+                const actual = (Number(stageData?.actualConsumption ?? 0) || 0) > 0 ? Number(stageData?.actualConsumption ?? 0) : mcSum
+                const wastageRM = Math.max(0, planned - actual)
+                const accepted = Number(stageData?.accepted || 0)
+                const rejected = Number(stageData?.rejected || 0)
+                const stageLabel = stage === "Assembling" ? "Assembly" : stage
+                return (
+                  <div key={stage} className="p-4 border rounded-lg">
+                    <h4 className="font-semibold mb-2">{stageLabel}</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                      <div className="flex justify-between"><span>Actual Raw Material Consumption</span><span className="font-medium">{Number(actual).toLocaleString()} {unit}</span></div>
+                      <div className="flex justify-between"><span>Raw Material Wastage</span><span className="font-medium text-destructive">{Number(wastageRM).toLocaleString()} {unit}</span></div>
+                      <div className="flex justify-between"><span>Accepted Units</span><span className="font-medium">{Number(accepted).toLocaleString()}</span></div>
+                      <div className="flex justify-between"><span>Rejected Units</span><span className="font-medium">{Number(rejected).toLocaleString()}</span></div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </>
   )

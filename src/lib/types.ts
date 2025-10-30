@@ -29,6 +29,7 @@ export interface BatchEntry {
 
 export interface FinalStock {
   id: string;
+  productId?: string; // User-defined product ID (distinct from Firestore document ID)
   name: string;
   sku: string;
   price: number;
@@ -38,6 +39,7 @@ export interface FinalStock {
   bom_per_piece?: BOMRow[];
   batches?: BatchEntry[]; // Array of batch entries for this product
   quantity?: number; // Accepted quantity from the last completed stage
+  threshold?: number; // Low stock threshold for finished products
   createdAt?: string; // Date when batch was accepted into Final Stock
 }
 
@@ -101,6 +103,7 @@ export type AppModule =
   | "Store"
   | "Batches"
   | "Final Stock"
+  | "Orders"
   | "Reports"
   | "Setup"
   | "Moulding"
@@ -139,4 +142,15 @@ export interface ActivityLog {
   action: LogAction;
   details: string;
   user: string; // For now, we can hardcode a user like "System"
+}
+
+export interface Order {
+  id: string; // Firestore document ID
+  orderId: string; // Manual order identifier
+  name?: string; // Customer or requester name (optional)
+  productId: string; // Reference to FinalStock.id
+  productName: string; // Denormalized for convenience
+  quantity: number;
+  orderType: string; // Selected from Setup
+  createdAt: string;
 }

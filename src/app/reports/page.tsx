@@ -38,6 +38,12 @@ export default function ReportsPage() {
     const assemblingDone = Boolean(s?.Assembling?.finishedAt)
     const testingDone = Boolean(s?.Testing?.finishedAt)
 
+    const rejectedUnits =
+      (Number(s?.Molding?.rejected) || 0) +
+      (Number(s?.Machining?.rejected) || 0) +
+      (Number(s?.Assembling?.rejected) || 0) +
+      (Number(s?.Testing?.rejected) || 0)
+
     return {
       dateISO: b.createdAt,
       date: new Date(b.createdAt),
@@ -45,6 +51,7 @@ export default function ReportsPage() {
       productName: b.productName,
       status: b.status,
       finalOutput: getFinalOutputForBatch(b),
+      rejectedUnits,
       durations: {
         Molding: moldingDone ? durationBetween(s?.Molding?.startedAt, s?.Molding?.finishedAt) : undefined,
         Machining: finishingDone ? durationBetween(s?.Machining?.startedAt, s?.Machining?.finishedAt) : undefined,

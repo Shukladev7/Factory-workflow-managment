@@ -29,6 +29,7 @@ export const COLLECTIONS = {
   ACTIVITY_LOG: "activityLog",
   EMPLOYEES: "employees",
   UNITS: "unitsOfMeasure",
+  ORDERS: "orders",
 } as const;
 
 // Batch operations
@@ -77,8 +78,8 @@ export async function getMouldedMaterials(): Promise<RawMaterial[]> {
   const q = query(materialsRef, where("isMoulded", "==", true));
   const snapshot = await getDocs(q);
   return snapshot.docs.map((doc) => ({
-    id: doc.id,
     ...doc.data(),
+    id: doc.id,
   })) as RawMaterial[];
 }
 
@@ -88,8 +89,8 @@ export async function getFinishedMaterials(): Promise<RawMaterial[]> {
   const q = query(materialsRef, where("isFinished", "==", true));
   const snapshot = await getDocs(q);
   return snapshot.docs.map((doc) => ({
-    id: doc.id,
     ...doc.data(),
+    id: doc.id,
   })) as RawMaterial[];
 }
 
@@ -100,8 +101,8 @@ export async function getRegularRawMaterials(): Promise<RawMaterial[]> {
   const snapshot = await getDocs(q);
   // Filter out finished materials as well
   const materials = snapshot.docs.map((doc) => ({
-    id: doc.id,
     ...doc.data(),
+    id: doc.id,
   })) as RawMaterial[];
   return materials.filter((m) => !m.isFinished);
 }
@@ -164,8 +165,8 @@ export async function getProductByName(
 
   const doc = snapshot.docs[0];
   return {
-    id: doc.id,
     ...doc.data(),
+    id: doc.id,
   } as FinalStock;
 }
 
@@ -352,4 +353,23 @@ export async function batchUpdateRawMaterials(
     updateRawMaterial(id, data),
   );
   await Promise.all(promises);
+}
+
+// Orders operations
+import type { Order } from "@/lib/types";
+
+export async function addOrder(order: Omit<Order, "id">) {
+  const ordersRef = collection(db, COLLECTIONS.ORDERS);
+  const docRef = await addDoc(ordersRef, order);
+  return docRef.id;
+}
+
+export async function updateOrder(id: string, updates: Partial<Order>) {
+  const orderRef = doc(db, COLLECTIONS.ORDERS, id);
+  await updateDoc(orderRef, updates);
+}
+
+export async function deleteOrder(id: string) {
+  const orderRef = doc(db, COLLECTIONS.ORDERS, id);
+  await deleteDoc(orderRef);
 }

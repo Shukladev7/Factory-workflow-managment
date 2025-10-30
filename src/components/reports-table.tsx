@@ -13,6 +13,7 @@ type ReportRow = {
   productName: string
   status: string
   finalOutput: number
+  rejectedUnits: number
   durations?: {
     Molding?: number
     Machining?: number
@@ -187,7 +188,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
                 <TableHead>Total Units</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Final Output</TableHead>
+                <TableHead className="text-right">Rejected Units</TableHead>
                 <TableHead className="text-right">Molding Time</TableHead>
                 <TableHead className="text-right">Machining Time</TableHead>
                 <TableHead className="text-right">Assembling Time</TableHead>
@@ -212,7 +213,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
                       <TableCell className="font-medium">{formatNumber(r.finalOutput || 0)}</TableCell>
                       <TableCell>{r.productName}</TableCell>
                       <TableCell>{r.status}</TableCell>
-                      <TableCell className="text-right">{formatNumber(r.finalOutput || 0)}</TableCell>
+                      <TableCell className="text-right">{formatNumber(r.rejectedUnits || 0)}</TableCell>
                       <TableCell className="text-right">
                         {dur.Molding != null ? formatMsToHMS(dur.Molding) : "-"}
                       </TableCell>

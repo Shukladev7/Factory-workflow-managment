@@ -171,7 +171,7 @@ export function ProductDetailsDialog({
   // Calculate total quantity across all batches
   const totalQuantity = useMemo(() => {
     return groupedProduct.batches.reduce((sum, batch) => {
-      return sum + (batch.fullEntry.quantity || 0);
+      return sum + Number(batch.fullEntry.quantity ?? 0);
     }, 0);
   }, [groupedProduct.batches]);
 

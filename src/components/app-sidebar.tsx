@@ -40,6 +40,7 @@ const navItems = [
     ],
   },
   { href: "/products", label: "Final Stock", module: "Final Stock" as const },
+  { href: "/orders", label: "Orders", module: "Orders" as const },
   { href: "/reports", label: "Reports", module: "Reports" as const },
   { href: "/setup", label: "Setup", module: "Setup" as const },
 ]

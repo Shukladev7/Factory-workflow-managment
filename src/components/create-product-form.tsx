@@ -19,10 +19,12 @@ import { PlaceHolderImages } from "@/lib/placeholder-images";
 import { BOMEditor } from "@/components/bom-editor";
 
 const formSchema = z.object({
+  productId: z.string().min(1, "Please enter a Product ID."),
   name: z.string().min(1, "Please enter a name."),
   sku: z.string().min(1, "Please enter a SKU."),
   price: z.coerce.number().min(0, "Price must be 0 or greater."),
   gstRate: z.coerce.number().min(0, "GST Rate must be 0 or greater."),
+  threshold: z.coerce.number().min(0, "Threshold must be 0 or greater.").default(0),
   imageUrl: z
     .string()
     .url("Please enter a valid URL.")
@@ -43,10 +45,12 @@ export function CreateProductForm({
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      productId: "",
       name: "",
       sku: "",
       price: 0,
       gstRate: 0,
+      threshold: 0,
       imageUrl: "",
       imageHint: "",
     },
@@ -88,7 +92,20 @@ export function CreateProductForm({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <FormField
+            control={form.control}
+            name="productId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Product ID</FormLabel>
+                <FormControl>
+                  <Input placeholder="e.g., PROD-1001" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <FormField
             control={form.control}
             name="name"
@@ -116,7 +133,7 @@ export function CreateProductForm({
             )}
           />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <FormField
             control={form.control}
             name="price"
@@ -136,6 +153,19 @@ export function CreateProductForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>GST Rate (%)</FormLabel>
+                <FormControl>
+                  <Input type="number" placeholder="0" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="threshold"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Low Stock Threshold</FormLabel>
                 <FormControl>
                   <Input type="number" placeholder="0" {...field} />
                 </FormControl>
