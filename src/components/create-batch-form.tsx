@@ -249,6 +249,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
       id: values.batchId,
       productId: values.productId,
       productName: selectedProduct.name,
+      quantityToBuild: values.quantityToBuild,
       totalMaterialQuantity,
       materials: selectedMaterials,
       createdAt: new Date().toISOString(),

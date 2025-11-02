@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatMsToHMS, formatNumber } from "@/lib/utils"
+import type { Batch, BatchMaterial } from "@/lib/types"
 
 type ReportRow = {
   dateISO: string
@@ -12,14 +13,17 @@ type ReportRow = {
   batchId: string
   productName: string
   status: string
-  finalOutput: number
+  plannedUnits: number
+  producedUnits: number
   rejectedUnits: number
+  rawMaterialWastage: Record<string, number> // material name -> wastage amount
   durations?: {
     Molding?: number
     Machining?: number
     Assembling?: number
     Testing?: number
   }
+  batch: Batch // Store full batch for accessing materials
 }
 
 function toRowDate(r: ReportRow) {
@@ -41,6 +45,58 @@ function formatHuman(d: Date) {
     month: "short",
     day: "2-digit",
   }).format(d)
+}
+
+// Calculate raw material wastage for a batch
+function calculateRawMaterialWastage(batch: Batch): Record<string, number> {
+  const wastage: Record<string, number> = {}
+  
+  for (const material of batch.materials) {
+    const stage = material.stage
+    const stageData = batch.processingStages[stage]
+    
+    if (!stageData) {
+      wastage[material.name] = 0
+      continue
+    }
+    
+    // Get actual consumption - check if there's per-material consumption data
+    const materialConsumptions = (stageData as any)?.materialConsumptions as Record<string, number> | undefined
+    let actualConsumption = 0
+    
+    if (materialConsumptions && materialConsumptions[material.id]) {
+      // Use per-material consumption if available
+      actualConsumption = Number(materialConsumptions[material.id]) || 0
+    } else {
+      // If multiple materials in same stage, distribute actualConsumption proportionally
+      const materialsInStage = batch.materials.filter(m => m.stage === stage)
+      const totalPlannedForStage = materialsInStage.reduce((sum, m) => sum + Number(m.quantity || 0), 0)
+      
+      if (totalPlannedForStage > 0) {
+        const materialRatio = Number(material.quantity || 0) / totalPlannedForStage
+        actualConsumption = (Number(stageData.actualConsumption) || 0) * materialRatio
+      } else {
+        // Fallback: if no planned quantity, use stage's actualConsumption directly
+        actualConsumption = Number(stageData.actualConsumption) || 0
+      }
+    }
+    
+    const plannedQuantity = Number(material.quantity || 0)
+    const wastageAmount = Math.max(0, actualConsumption - plannedQuantity)
+    wastage[material.name] = Math.round(wastageAmount * 100) / 100
+  }
+  
+  return wastage
+}
+
+// Format raw material wastage as a string: raw1=10 | raw2=7 | raw3=5
+function formatRawMaterialWastage(wastage: Record<string, number>): string {
+  const entries = Object.entries(wastage)
+    .filter(([_, value]) => value > 0) // Only show materials with wastage > 0
+    .sort(([a], [b]) => a.localeCompare(b)) // Sort alphabetically
+    .map(([name, value]) => `${name}=${value.toFixed(2)}`)
+  
+  return entries.length > 0 ? entries.join(" | ") : "-"
 }
 
 export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
@@ -73,11 +129,12 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
       .sort((a, b) => toRowDate(b).getTime() - toRowDate(a).getTime())
   }, [rows, from, to, batchQuery])
 
+
   const dailyTotals = useMemo(() => {
     const map = new Map<string, number>()
     for (const r of filtered) {
       const key = formatYMD(toRowDate(r))
-      map.set(key, (map.get(key) ?? 0) + (r.finalOutput || 0))
+      map.set(key, (map.get(key) ?? 0) + (r.producedUnits || 0))
     }
     return Array.from(map.entries())
       .map(([day, total]) => ({ day, total }))
@@ -90,7 +147,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
     () =>
       filtered.reduce((sum, r) => {
         const isToday = formatYMD(toRowDate(r)) === todayYMD
-        return sum + (isToday ? r.finalOutput || 0 : 0)
+        return sum + (isToday ? r.producedUnits || 0 : 0)
       }, 0),
     [filtered, todayYMD],
   )
@@ -99,10 +156,12 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
     const headers = [
       "Date",
       "Batch ID",
-      "Total Units",
-      "Product Name",
+      "Product",
       "Status",
-      "Final Output (units)",
+      "Planned Units",
+      "Produced Units",
+      "Rejected Units",
+      "Raw Material Wastage",
       "Molding Time (HH:MM:SS)",
       "Machining Time (HH:MM:SS)",
       "Assembling Time (HH:MM:SS)",
@@ -112,13 +171,16 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
     for (const r of filtered) {
       const d = toRowDate(r)
       const dur = r.durations || {}
+      const wastageString = formatRawMaterialWastage(r.rawMaterialWastage)
       const row = [
         formatYMD(d),
         r.batchId,
-        String(r.finalOutput ?? 0),
         r.productName.replaceAll(",", " "),
         r.status,
-        String(r.finalOutput ?? 0),
+        String(r.plannedUnits ?? 0),
+        String(r.producedUnits ?? 0),
+        String(r.rejectedUnits ?? 0),
+        `"${wastageString}"`, // Quote to handle pipe characters in CSV
         dur.Molding != null ? formatMsToHMS(dur.Molding) : "",
         dur.Machining != null ? formatMsToHMS(dur.Machining) : "",
         dur.Assembling != null ? formatMsToHMS(dur.Assembling) : "",
@@ -144,6 +206,8 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
     setTo("")
     setBatchQuery("")
   }
+
+  const totalColumns = 12 // Date, Batch ID, Product, Status, Planned Units, Produced Units, Rejected Units, Raw Material Wastage, 4 time columns
 
   return (
     <div className="space-y-4">
@@ -179,59 +243,64 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
         </div>
       </div>
 
-      <div className="rounded-lg border bg-card">
+      <div className="rounded-lg border bg-card overflow-x-auto">
         <Table>
-            <TableHeader>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Batch ID</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Planned Units</TableHead>
+              <TableHead className="text-right">Produced Units</TableHead>
+              <TableHead className="text-right">Rejected Units</TableHead>
+              <TableHead>Raw Material Wastage</TableHead>
+              <TableHead className="text-right">Molding Time</TableHead>
+              <TableHead className="text-right">Machining Time</TableHead>
+              <TableHead className="text-right">Assembling Time</TableHead>
+              <TableHead className="text-right">Testing Time</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.length === 0 ? (
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Batch ID</TableHead>
-                <TableHead>Total Units</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Rejected Units</TableHead>
-                <TableHead className="text-right">Molding Time</TableHead>
-                <TableHead className="text-right">Machining Time</TableHead>
-                <TableHead className="text-right">Assembling Time</TableHead>
-                <TableHead className="text-right">Testing Time</TableHead>
+                <TableCell colSpan={totalColumns} className="text-center text-muted-foreground">
+                  No records match your filters.
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center text-muted-foreground">
-                    No records match your filters.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filtered.map((r) => {
-                  const d = toRowDate(r)
-                  const dur = r.durations || {}
-                  return (
-                    <TableRow key={`${r.batchId}-${formatYMD(d)}`}>
-                      <TableCell>{formatHuman(d)}</TableCell>
-                      <TableCell className="font-mono text-sm">{r.batchId}</TableCell>
-                      <TableCell className="font-medium">{formatNumber(r.finalOutput || 0)}</TableCell>
-                      <TableCell>{r.productName}</TableCell>
-                      <TableCell>{r.status}</TableCell>
-                      <TableCell className="text-right">{formatNumber(r.rejectedUnits || 0)}</TableCell>
-                      <TableCell className="text-right">
-                        {dur.Molding != null ? formatMsToHMS(dur.Molding) : "-"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {dur.Machining != null ? formatMsToHMS(dur.Machining) : "-"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {dur.Assembling != null ? formatMsToHMS(dur.Assembling) : "-"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {dur.Testing != null ? formatMsToHMS(dur.Testing) : "-"}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          </Table>
+            ) : (
+              filtered.map((r) => {
+                const d = toRowDate(r)
+                const dur = r.durations || {}
+                const wastageString = formatRawMaterialWastage(r.rawMaterialWastage)
+                return (
+                  <TableRow key={`${r.batchId}-${formatYMD(d)}`}>
+                    <TableCell>{formatHuman(d)}</TableCell>
+                    <TableCell className="font-mono text-sm">{r.batchId}</TableCell>
+                    <TableCell>{r.productName}</TableCell>
+                    <TableCell>{r.status}</TableCell>
+                    <TableCell className="text-right">{formatNumber(r.plannedUnits || 0)}</TableCell>
+                    <TableCell className="text-right font-medium">{formatNumber(r.producedUnits || 0)}</TableCell>
+                    <TableCell className="text-right">{formatNumber(r.rejectedUnits || 0)}</TableCell>
+                    <TableCell className="font-mono text-sm">{wastageString}</TableCell>
+                    <TableCell className="text-right">
+                      {dur.Molding != null ? formatMsToHMS(dur.Molding) : "-"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {dur.Machining != null ? formatMsToHMS(dur.Machining) : "-"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {dur.Assembling != null ? formatMsToHMS(dur.Assembling) : "-"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {dur.Testing != null ? formatMsToHMS(dur.Testing) : "-"}
+                    </TableCell>
+                  </TableRow>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
       </div>
     </div>
   )

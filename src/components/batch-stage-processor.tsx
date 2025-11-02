@@ -169,9 +169,12 @@ export function BatchStageProcessor({
     const currentIndex = selectedProcesses.indexOf(stage);
 
     if (currentIndex === 0) {
-      return getRawMaterialForStage(batch);
+      // For the first stage, use quantityToBuild
+      // Fallback to raw material input for older batches without quantityToBuild
+      return batch.quantityToBuild || getRawMaterialForStage(batch);
     }
 
+    // For subsequent stages, use accepted from previous stage
     return getInputFromPreviousStage(batch);
   };
 
@@ -787,6 +790,14 @@ export function BatchStageProcessor({
                                     type="number" 
                                     {...field} 
                                     disabled={isAnyButtonDisabled}
+                                    onChange={(e) => {
+                                      field.onChange(e);
+                                      // Auto-calculate rejected units
+                                      const acceptedValue = Number(e.target.value) || 0;
+                                      const totalInput = getTotalInput(batch);
+                                      const rejectedValue = Math.max(0, totalInput - acceptedValue);
+                                      form.setValue(`batches.${index}.rejected`, rejectedValue);
+                                    }}
                                   />
                                 </FormControl>
                                 <FormMessage />

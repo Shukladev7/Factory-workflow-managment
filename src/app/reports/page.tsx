@@ -1,65 +1,16 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import Link from "next/link"
 import PageHeader from "@/components/page-header"
-import type { Batch } from "@/lib/types"
-import ReportsTable from "@/components/reports-table"
-import { subscribeToAllBatches } from "@/lib/firebase"
-import { durationBetween } from "@/lib/utils"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { usePermissions } from "@/hooks/use-permissions"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ShieldX } from "lucide-react"
-
-function getFinalOutputForBatch(batch: Batch): number {
-  // Final output preference: Testing > Machining > Assembling > Molding > 0
-  const stages = batch.processingStages
-  if (stages.Testing?.completed) return stages.Testing.accepted
-  if (stages.Machining?.completed) return stages.Machining.accepted
-  if (stages.Assembling?.completed) return stages.Assembling.accepted
-  if (stages.Molding?.completed) return stages.Molding.accepted
-  return 0
-}
+import { ShieldX, Package, ShoppingCart } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 export default function ReportsPage() {
-  const [batches, setBatches] = useState<Batch[]>([])
   const { canEdit, loading: permissionsLoading } = usePermissions()
-  
   const canAccessReports = canEdit("Reports")
-
-  useEffect(() => {
-    const unsubscribe = subscribeToAllBatches(setBatches)
-    return () => unsubscribe()
-  }, [])
-
-  const rows = batches.map((b) => {
-    const s = b.processingStages
-    const moldingDone = Boolean(s?.Molding?.finishedAt)
-    const finishingDone = Boolean(s?.Machining?.finishedAt)
-    const assemblingDone = Boolean(s?.Assembling?.finishedAt)
-    const testingDone = Boolean(s?.Testing?.finishedAt)
-
-    const rejectedUnits =
-      (Number(s?.Molding?.rejected) || 0) +
-      (Number(s?.Machining?.rejected) || 0) +
-      (Number(s?.Assembling?.rejected) || 0) +
-      (Number(s?.Testing?.rejected) || 0)
-
-    return {
-      dateISO: b.createdAt,
-      date: new Date(b.createdAt),
-      batchId: b.id,
-      productName: b.productName,
-      status: b.status,
-      finalOutput: getFinalOutputForBatch(b),
-      rejectedUnits,
-      durations: {
-        Molding: moldingDone ? durationBetween(s?.Molding?.startedAt, s?.Molding?.finishedAt) : undefined,
-        Machining: finishingDone ? durationBetween(s?.Machining?.startedAt, s?.Machining?.finishedAt) : undefined,
-        Assembling: assemblingDone ? durationBetween(s?.Assembling?.startedAt, s?.Assembling?.finishedAt) : undefined,
-        Testing: testingDone ? durationBetween(s?.Testing?.startedAt, s?.Testing?.finishedAt) : undefined,
-      },
-    }
-  })
 
   if (permissionsLoading) {
     return (
@@ -68,13 +19,13 @@ export default function ReportsPage() {
       </div>
     )
   }
-  
+
   if (!canAccessReports) {
     return (
       <div className="space-y-6">
         <PageHeader
           title="Reports"
-          description="Daily production by batch. Filters by date range and batch ID. Final output uses the latest completed stage. Stage durations are shown per batch."
+          description="View production and order reports with detailed analytics and filtering options."
         />
         <Alert variant="destructive" className="max-w-2xl">
           <ShieldX className="h-4 w-4" />
@@ -90,9 +41,59 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        description="Daily production by batch. Filters by date range and batch ID. Final output uses the latest completed stage. Stage durations are shown per batch."
+        description="View production and order reports with detailed analytics and filtering options."
       />
-      <ReportsTable rows={rows} />
+      <div className="grid gap-6 md:grid-cols-2">
+        <Link href="/reports/production">
+          <Card className={cn(
+            "transition-all hover:shadow-lg hover:border-primary cursor-pointer h-full"
+          )}>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Package className="h-6 w-6 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <CardTitle>Production Reports</CardTitle>
+                  <CardDescription>
+                    Daily production by batch with date filtering and CSV export
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                View production reports by batch, including final output, rejected units, and stage durations. Filter by date range and batch ID, and download CSV reports.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/reports/orders">
+          <Card className={cn(
+            "transition-all hover:shadow-lg hover:border-primary cursor-pointer h-full"
+          )}>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <ShoppingCart className="h-6 w-6 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <CardTitle>Order Reports</CardTitle>
+                  <CardDescription>
+                    Daily orders with date filtering and CSV export
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                View order reports with customer information, product details, quantities, and order types. Filter by date range and order ID, and download CSV reports.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
     </div>
   )
 }

@@ -78,6 +78,7 @@ export interface Batch {
   id: string;
   productId: string;
   productName: string;
+  quantityToBuild: number;
   totalMaterialQuantity: number;
   materials: BatchMaterial[];
   createdAt: string;

@@ -329,23 +329,71 @@ export default function BatchesOverviewPage() {
               {(wastageBatch.selectedProcesses || []).map((stage) => {
                 const stageData = wastageBatch.processingStages[stage]
                 const mats = wastageBatch.materials.filter(m => m.stage === stage)
-                const unit = mats[0]?.unit || "units"
-                const planned = mats.reduce((s, m) => s + Number(m.quantity || 0), 0)
                 const mc: Record<string, number> | undefined = (stageData as any)?.materialConsumptions
-                const mcSum = mc ? Object.values(mc).reduce((a, v) => a + Number(v || 0), 0) : 0
-                const actual = (Number(stageData?.actualConsumption ?? 0) || 0) > 0 ? Number(stageData?.actualConsumption ?? 0) : mcSum
-                const wastageRM = Math.max(0, planned - actual)
                 const accepted = Number(stageData?.accepted || 0)
                 const rejected = Number(stageData?.rejected || 0)
                 const stageLabel = stage === "Assembling" ? "Assembly" : stage
+                
                 return (
-                  <div key={stage} className="p-4 border rounded-lg">
-                    <h4 className="font-semibold mb-2">{stageLabel}</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                      <div className="flex justify-between"><span>Actual Raw Material Consumption</span><span className="font-medium">{Number(actual).toLocaleString()} {unit}</span></div>
-                      <div className="flex justify-between"><span>Raw Material Wastage</span><span className="font-medium text-destructive">{Number(wastageRM).toLocaleString()} {unit}</span></div>
-                      <div className="flex justify-between"><span>Accepted Units</span><span className="font-medium">{Number(accepted).toLocaleString()}</span></div>
-                      <div className="flex justify-between"><span>Rejected Units</span><span className="font-medium">{Number(rejected).toLocaleString()}</span></div>
+                  <div key={stage} className="p-4 border rounded-lg space-y-3">
+                    <h4 className="font-semibold">{stageLabel}</h4>
+                    
+                    {/* Raw Material Consumption & Wastage Table */}
+                    {mats.length > 0 && (
+                      <div>
+                        <h5 className="text-sm font-medium mb-2">Raw Material Consumption & Wastage</h5>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Material</TableHead>
+                              <TableHead className="text-right">Planned Input</TableHead>
+                              <TableHead className="text-right">Actual Consumption</TableHead>
+                              <TableHead className="text-right">Wastage</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {mats.map((mat) => {
+                              const planned = Number(mat.quantity || 0)
+                              let actual = 0
+                              
+                              if (mc && mc[mat.id]) {
+                                actual = Number(mc[mat.id]) || 0
+                              } else {
+                                // Fallback: distribute actualConsumption proportionally
+                                const totalPlanned = mats.reduce((sum, m) => sum + Number(m.quantity || 0), 0)
+                                if (totalPlanned > 0) {
+                                  const ratio = planned / totalPlanned
+                                  actual = (Number(stageData?.actualConsumption) || 0) * ratio
+                                }
+                              }
+                              
+                              const wastage = Math.max(0, actual - planned)
+                              
+                              return (
+                                <TableRow key={mat.id}>
+                                  <TableCell className="font-medium">{mat.name}</TableCell>
+                                  <TableCell className="text-right">{planned.toLocaleString()} {mat.unit}</TableCell>
+                                  <TableCell className="text-right">{actual.toLocaleString()} {mat.unit}</TableCell>
+                                  <TableCell className="text-right">
+                                    <span className={wastage > 0 ? "text-destructive font-medium" : ""}>
+                                      {wastage.toLocaleString()} {mat.unit}
+                                    </span>
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                    
+                    {/* Quality Metrics */}
+                    <div>
+                      <h5 className="text-sm font-medium mb-2">Quality Metrics</h5>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="flex justify-between"><span>Accepted Units</span><span className="font-medium">{accepted.toLocaleString()}</span></div>
+                        <div className="flex justify-between"><span>Rejected Units</span><span className="font-medium text-destructive">{rejected.toLocaleString()}</span></div>
+                      </div>
                     </div>
                   </div>
                 )
