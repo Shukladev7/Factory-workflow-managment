@@ -140,13 +140,28 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
           selectedProcesses.includes(bomRow.stage),
         );
 
-        // Convert filtered BOM to materials format
-        const bomMaterials = filteredBOM.map((bomRow) => ({
-          materialId: bomRow.raw_material_id,
-          quantity: bomRow.qty_per_piece * quantityToBuild,
-          stage: bomRow.stage,
-          materialType: "raw" as const,
-        }));
+        // Convert filtered BOM to materials format with proper material type detection
+        const bomMaterials = filteredBOM.map((bomRow) => {
+          // Find the material to determine its type
+          const material = rawMaterials.find((m) => m.id === bomRow.raw_material_id);
+          
+          // Determine material type based on material properties
+          let materialType: "raw" | "moulded" | "finished" = "raw";
+          if (material) {
+            if (material.isFinished) {
+              materialType = "finished";
+            } else if (material.isMoulded) {
+              materialType = "moulded";
+            }
+          }
+
+          return {
+            materialId: bomRow.raw_material_id,
+            quantity: bomRow.qty_per_piece * quantityToBuild,
+            stage: bomRow.stage,
+            materialType,
+          };
+        });
 
         // Only update if there are materials, otherwise set default
         if (bomMaterials.length > 0) {
@@ -163,7 +178,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
         }
       }
     }
-  }, [selectedProductId, selectedProcesses, quantityToBuild, finalStock, form]);
+  }, [selectedProductId, selectedProcesses, quantityToBuild, finalStock, form, rawMaterials]);
 
   useEffect(() => {
     setIsClient(true);

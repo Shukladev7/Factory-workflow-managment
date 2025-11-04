@@ -70,26 +70,15 @@ export default function StorePage() {
         details += ` ${changes.join(", ")}.`
       }
 
-      // Check if quantity is 0 or below, delete the material instead of updating
-      if (updatedMaterial.quantity <= 0) {
-        await deleteRawMaterial(updatedMaterial.id)
-        await createActivityLogEntry({ 
-          recordId: updatedMaterial.id, 
-          recordType: "RawMaterial", 
-          action: "Deleted", 
-          details: `Material "${updatedMaterial.name}" deleted due to quantity reaching 0.`
-        })
-        toast({ title: "Material Deleted", description: `${updatedMaterial.name} has been deleted (quantity reached 0).` })
-      } else {
-        await updateRawMaterial(updatedMaterial.id, updatedMaterial)
-        await createActivityLogEntry({ 
-          recordId: updatedMaterial.id, 
-          recordType: "RawMaterial", 
-          action: "Updated", 
-          details 
-        })
-        toast({ title: "Material Updated", description: `${updatedMaterial.name} has been updated.` })
-      }
+      // Update material (allow quantity 0 for moulded/finished units)
+      await updateRawMaterial(updatedMaterial.id, updatedMaterial)
+      await createActivityLogEntry({ 
+        recordId: updatedMaterial.id, 
+        recordType: "RawMaterial", 
+        action: "Updated", 
+        details 
+      })
+      toast({ title: "Material Updated", description: `${updatedMaterial.name} has been updated.` })
       setIsEditOpen(false)
     } catch (error) {
       toast({

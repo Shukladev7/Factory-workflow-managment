@@ -261,27 +261,17 @@ export function BatchStageProcessor({
           : materialInBatch.quantity;
         
         const oldQuantity = materialToUpdate.quantity;
-        const newQuantity = oldQuantity - consumptionAmount;
+        const newQuantity = Math.max(0, oldQuantity - consumptionAmount); // Ensure quantity doesn't go negative
 
-        if (newQuantity <= 0) {
-          await deleteRawMaterial(materialToUpdate.id);
-          await addLog({
-            recordId: materialToUpdate.id,
-            recordType: "RawMaterial",
-            action: "Deleted",
-            details: `Batch ${batch.id} (${stage}) consumed all remaining stock (${oldQuantity} ${materialToUpdate.unit}). Material deleted.`,
-          });
-        } else {
-          await updateRawMaterial(materialToUpdate.id, {
-            quantity: newQuantity,
-          });
-          await addLog({
-            recordId: materialToUpdate.id,
-            recordType: "RawMaterial",
-            action: "Stock Adjustment (Batch)",
-            details: `Batch ${batch.id} (${stage}) consumed ${consumptionAmount} ${materialToUpdate.unit}. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
-          });
-        }
+        await updateRawMaterial(materialToUpdate.id, {
+          quantity: newQuantity,
+        });
+        await addLog({
+          recordId: materialToUpdate.id,
+          recordType: "RawMaterial",
+          action: "Stock Adjustment (Batch)",
+          details: `Batch ${batch.id} (${stage}) consumed ${consumptionAmount} ${materialToUpdate.unit}. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
+        });
       }
     }
   };
@@ -896,40 +886,20 @@ export function BatchStageProcessor({
         {batches.length > 0 && (
           <div className="flex justify-end gap-2 mt-4">
             {hasAnyBatchWithThisAsLastStage ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleEndCycle}
-                  disabled={isAnyButtonDisabled}
-                >
-                  {isEndingCycle ? "Ending Cycle..." : "End cycle at this stage"}
-                </Button>
-                <Button 
-                  type="button" 
-                  onClick={handleFinishBatch}
-                  disabled={isAnyButtonDisabled}
-                >
-                  {isFinishing ? "Finishing..." : "Finish Batch"}
-                </Button>
-              </>
+              <Button 
+                type="button" 
+                onClick={handleFinishBatch}
+                disabled={isAnyButtonDisabled}
+              >
+                {isFinishing ? "Finishing..." : "Finish Batch"}
+              </Button>
             ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleEndCycle}
-                  disabled={isAnyButtonDisabled}
-                >
-                  {isEndingCycle ? "Ending Cycle..." : "End cycle at this stage"}
-                </Button>
-                <Button 
-                  type="submit"
-                  disabled={isAnyButtonDisabled}
-                >
-                  {isSubmitting ? "Processing..." : "Proceed to next stage"}
-                </Button>
-              </>
+              <Button 
+                type="submit"
+                disabled={isAnyButtonDisabled}
+              >
+                {isSubmitting ? "Processing..." : "Proceed to next stage"}
+              </Button>
             )}
           </div>
         )}

@@ -217,7 +217,11 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
 
         {/* BOM Editor */}
         <div className="border-t pt-6">
-          <BOMEditor bomRows={bomRows} onBOMChange={setBomRows} />
+          <BOMEditor 
+            bomRows={bomRows} 
+            onBOMChange={setBomRows}
+            productName={form.watch("name")}
+          />
         </div>
 
         <div className="flex justify-end">
