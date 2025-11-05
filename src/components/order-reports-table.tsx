@@ -10,7 +10,6 @@ type OrderReportRow = {
   dateISO: string
   date: string | Date
   orderId: string
-  name?: string
   productName: string
   quantity: number
   orderType: string
@@ -90,21 +89,13 @@ export default function OrderReportsTable({ rows }: { rows: OrderReportRow[] }) 
   )
 
   function downloadCSV() {
-    const headers = [
-      "Date",
-      "Order ID",
-      "Customer Name",
-      "Product Name",
-      "Quantity",
-      "Order Type",
-    ]
+    const headers = ["Date", "Order ID", "Product Name", "Quantity", "Order Type"]
     const lines = [headers.join(",")]
     for (const r of filtered) {
       const d = toRowDate(r)
       const row = [
         formatYMD(d),
         r.orderId,
-        r.name || "",
         r.productName.replaceAll(",", " "),
         String(r.quantity ?? 0),
         r.orderType,
@@ -170,7 +161,6 @@ export default function OrderReportsTable({ rows }: { rows: OrderReportRow[] }) 
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Order ID</TableHead>
-              <TableHead>Customer Name</TableHead>
               <TableHead>Product</TableHead>
               <TableHead className="text-right">Quantity</TableHead>
               <TableHead>Order Type</TableHead>
@@ -179,7 +169,7 @@ export default function OrderReportsTable({ rows }: { rows: OrderReportRow[] }) 
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={5} className="text-center text-muted-foreground">
                   No records match your filters.
                 </TableCell>
               </TableRow>
@@ -190,7 +180,6 @@ export default function OrderReportsTable({ rows }: { rows: OrderReportRow[] }) 
                   <TableRow key={`${r.orderId}-${formatYMD(d)}`}>
                     <TableCell>{formatHuman(d)}</TableCell>
                     <TableCell className="font-mono text-sm">{r.orderId}</TableCell>
-                    <TableCell>{r.name || "-"}</TableCell>
                     <TableCell>{r.productName}</TableCell>
                     <TableCell className="text-right font-medium">{formatNumber(r.quantity || 0)}</TableCell>
                     <TableCell>{r.orderType}</TableCell>
@@ -204,4 +193,3 @@ export default function OrderReportsTable({ rows }: { rows: OrderReportRow[] }) 
     </div>
   )
 }
-
