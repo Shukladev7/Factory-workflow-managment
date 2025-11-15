@@ -40,6 +40,8 @@ import * as XLSX from "xlsx";
 import { CSVImportDialog } from "@/components/csv-import-dialog";
 import { ProductDetailsDialog } from "@/components/product-details-dialog";
 import { Badge } from "@/components/ui/badge";
+import { RestockModal } from "@/components/restock-modal";
+import { SortControls, sortArray, type SortDirection } from "@/components/sort-controls";
 
 // Grouped product interface
 interface GroupedProduct {
@@ -63,6 +65,11 @@ export default function ProductsPage() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("none");
+  const [restockModal, setRestockModal] = useState<{
+    isOpen: boolean;
+    product: GroupedProduct | null;
+  }>({ isOpen: false, product: null });
   const { toast } = useToast();
   
   const canEditFinalStock = canEdit("Final Stock");
@@ -376,9 +383,63 @@ export default function ProductsPage() {
     }
   };
 
-  if (!isClient) {
-    return null;
-  }
+  const handleRestock = async (
+    product: GroupedProduct,
+    data: { quantity: number; batchId: string; sku: string }
+  ) => {
+    try {
+      if (!product.productTemplate) {
+        throw new Error("Product template not found");
+      }
+
+      // Import the function dynamically to avoid circular imports
+      const { addBatchToProduct } = await import("@/lib/firebase/firestore-operations");
+
+      const newBatch = {
+        batchId: data.batchId,
+        sourceBatchId: data.batchId,
+        quantity: data.quantity,
+        sku: data.sku,
+        createdAt: new Date().toISOString(),
+      };
+
+      await addBatchToProduct(product.productTemplate.id, newBatch);
+
+      await createActivityLog({
+        recordId: product.productTemplate.id,
+        recordType: "FinalStock",
+        action: "Restocked",
+        details: `Added ${data.quantity} units via batch ${data.batchId}`,
+        timestamp: new Date().toISOString(),
+        user: "System",
+      });
+
+      toast({
+        title: "Stock Added",
+        description: `Successfully added ${data.quantity} units to ${product.productName}`,
+      });
+    } catch (error) {
+      console.error("Restock failed:", error);
+      toast({
+        variant: "destructive",
+        title: "Restock Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  };
+
+  const filteredAndSortedProducts = useMemo(() => {
+    const filtered = groupedProducts.filter((group) => {
+      const query = searchQuery.toLowerCase();
+      return (
+        group.productName.toLowerCase().includes(query) ||
+        group.firstEntry.sku.toLowerCase().includes(query) ||
+        (group.firstEntry.productId?.toLowerCase() || "").includes(query)
+      );
+    });
+
+    return sortArray(filtered, sortDirection, (group) => group.productName);
+  }, [groupedProducts, searchQuery, sortDirection]);
 
   const getStatus = (quantity: number, threshold: number = 0) => {
     if (quantity <= 0) {
@@ -398,14 +459,9 @@ export default function ProductsPage() {
     return <Badge variant="secondary">In Stock</Badge>
   }
 
-  const filteredProducts = groupedProducts.filter((group) => {
-    const query = searchQuery.toLowerCase();
-    return (
-      group.productName.toLowerCase().includes(query) ||
-      group.firstEntry.sku.toLowerCase().includes(query) ||
-      (group.firstEntry.productId?.toLowerCase() || "").includes(query)
-    );
-  });
+  if (!isClient) {
+    return null;
+  }
 
   return (
     <>
@@ -452,8 +508,8 @@ export default function ProductsPage() {
           </Dialog>
         )}
       </PageHeader>
-      <div className="mb-4">
-        <div className="relative">
+      <div className="mb-4 flex gap-4 items-center">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by name, SKU, or Product ID..."
@@ -462,6 +518,11 @@ export default function ProductsPage() {
             className="pl-10"
           />
         </div>
+        <SortControls
+          sortDirection={sortDirection}
+          onSortChange={setSortDirection}
+          label="Sort Products"
+        />
       </div>
       <Card>
         <CardContent className="pt-6">
@@ -481,14 +542,14 @@ export default function ProductsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredProducts.length === 0 ? (
+              {filteredAndSortedProducts.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                     No products found matching your search.
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredProducts.map((group) => (
+                filteredAndSortedProducts.map((group: GroupedProduct) => (
                   <TableRow key={group.productName}>
                   <TableCell>
                     <div className="relative w-16 h-12 rounded-md overflow-hidden">
@@ -511,14 +572,14 @@ export default function ProductsPage() {
                     {group.firstEntry.sku}
                   </TableCell>
                   <TableCell>
-                    {group.batches.reduce((sum, b) => sum + Number(b.fullEntry.quantity ?? 0), 0)} pcs
+                    {group.batches.reduce((sum: number, b: any) => sum + Number(b.fullEntry.quantity ?? 0), 0)} pcs
                   </TableCell>
                   <TableCell>
                     {group.productTemplate?.threshold ?? 0} pcs
                   </TableCell>
                   <TableCell>
                     {getStatus(
-                      group.batches.reduce((sum, b) => sum + Number(b.fullEntry.quantity ?? 0), 0),
+                      group.batches.reduce((sum: number, b: any) => sum + Number(b.fullEntry.quantity ?? 0), 0),
                       group.productTemplate?.threshold ?? 0
                     )}
                   </TableCell>
@@ -539,6 +600,13 @@ export default function ProductsPage() {
                         >
                           View Details
                         </DropdownMenuItem>
+                        {canEditFinalStock && (
+                          <DropdownMenuItem
+                            onClick={() => setRestockModal({ isOpen: true, product: group })}
+                          >
+                            Restock
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -558,6 +626,14 @@ export default function ProductsPage() {
           onProductUpdate={handleProductUpdated}
           onProductDelete={handleProductDeleted}
           canEdit={canEditFinalStock}
+        />
+      )}
+      {restockModal.product && (
+        <RestockModal
+          isOpen={restockModal.isOpen}
+          onOpenChange={(isOpen) => setRestockModal({ isOpen, product: null })}
+          productName={restockModal.product.productName}
+          onRestock={(data) => handleRestock(restockModal.product!, data)}
         />
       )}
     </>

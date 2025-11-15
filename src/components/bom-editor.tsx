@@ -35,32 +35,40 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
   const mouldedUnitItem = mouldedMaterials.find(m => m.name === `Moulded ${productName}`)
   const machinedUnitItem = finishedMaterials.find(m => m.name === `Finished ${productName}`)
 
-  // Initialize checkbox states based on existing BOM rows
-  useEffect(() => {
-    const hasMouldedUnit = bomRows.some(
-      row => {
-        // Check for placeholder ID or actual material ID
-        if (row.raw_material_id === MOULDED_UNIT_ID) return true
-        if (mouldedUnitItem && row.raw_material_id === mouldedUnitItem.id && row.stage === "Machining") return true
-        return false
-      }
-    )
-    setMouldedUnitRequired(hasMouldedUnit)
+  // Derive checkbox states from bomRows without causing re-renders
+  const hasMouldedUnit = bomRows.some(
+    row => {
+      // Check for placeholder ID or actual material ID
+      if (row.raw_material_id === MOULDED_UNIT_ID) return true
+      if (mouldedUnitItem && row.raw_material_id === mouldedUnitItem.id && row.stage === "Machining") return true
+      return false
+    }
+  )
 
-    const hasMachinedUnit = bomRows.some(
-      row => {
-        // Check for placeholder ID or actual material ID
-        if (row.raw_material_id === MACHINED_UNIT_ID) return true
-        if (machinedUnitItem && row.raw_material_id === machinedUnitItem.id && row.stage === "Assembling") return true
-        return false
-      }
-    )
-    setMachinedUnitRequired(hasMachinedUnit)
-  }, [bomRows, mouldedUnitItem, machinedUnitItem])
+  const hasMachinedUnit = bomRows.some(
+    row => {
+      // Check for placeholder ID or actual material ID
+      if (row.raw_material_id === MACHINED_UNIT_ID) return true
+      if (machinedUnitItem && row.raw_material_id === machinedUnitItem.id && row.stage === "Assembling") return true
+      return false
+    }
+  )
+
+  // Initialize state only once on mount if BOM rows already exist
+  useEffect(() => {
+    if (hasMouldedUnit && !mouldedUnitRequired) {
+      setMouldedUnitRequired(true)
+    }
+    if (hasMachinedUnit && !machinedUnitRequired) {
+      setMachinedUnitRequired(true)
+    }
+  }, []) // Empty dependency array - only run on mount
 
   // Handle moulded unit checkbox change
-  useEffect(() => {
+  const handleMouldedUnitChange = async (checked: boolean) => {
     if (isProcessingRef.current) return
+    
+    setMouldedUnitRequired(checked)
     
     const existingMouldedRow = bomRows.find(
       row => {
@@ -71,41 +79,38 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
       }
     )
 
-    if (mouldedUnitRequired && !existingMouldedRow) {
+    if (checked && !existingMouldedRow) {
       // Create material in store if it doesn't exist
-      const addMouldedRow = async () => {
-        isProcessingRef.current = true
-        let materialId = mouldedUnitItem?.id
-        let materialUnit = mouldedUnitItem?.unit || "pcs"
+      isProcessingRef.current = true
+      let materialId = mouldedUnitItem?.id
+      let materialUnit = mouldedUnitItem?.unit || "pcs"
 
-        if (!mouldedUnitItem && productName) {
-          // Create the material in store with quantity 0
-          const { addRawMaterial } = await import("@/lib/firebase/firestore-operations")
-          const newMaterialId = await addRawMaterial({
-            name: `Moulded ${productName}`,
-            sku: `MLD-${productName.substring(0, 10).toUpperCase()}`,
-            quantity: 0,
-            unit: "pcs",
-            threshold: 10,
-            isMoulded: true,
-          })
-          materialId = newMaterialId
-        }
-
-        if (materialId) {
-          const newRow: BOMRow = {
-            raw_material_id: materialId,
-            stage: "Machining",
-            qty_per_piece: 1,
-            unit: materialUnit,
-            notes: "Auto-added: Moulded unit",
-          }
-          onBOMChange([...bomRows, newRow])
-        }
-        isProcessingRef.current = false
+      if (!mouldedUnitItem && productName) {
+        // Create the material in store with quantity 0
+        const { addRawMaterial } = await import("@/lib/firebase/firestore-operations")
+        const newMaterialId = await addRawMaterial({
+          name: `Moulded ${productName}`,
+          sku: `MLD-${productName.substring(0, 10).toUpperCase()}`,
+          quantity: 0,
+          unit: "pcs",
+          threshold: 10,
+          isMoulded: true,
+        })
+        materialId = newMaterialId
       }
-      addMouldedRow()
-    } else if (!mouldedUnitRequired && existingMouldedRow) {
+
+      if (materialId) {
+        const newRow: BOMRow = {
+          raw_material_id: materialId,
+          stage: "Machining",
+          qty_per_piece: 1,
+          unit: materialUnit,
+          notes: "Auto-added: Moulded unit",
+        }
+        onBOMChange([...bomRows, newRow])
+      }
+      isProcessingRef.current = false
+    } else if (!checked && existingMouldedRow) {
       // Remove moulded unit row (both placeholder and actual)
       isProcessingRef.current = true
       const updatedRows = bomRows.filter(
@@ -118,11 +123,13 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
       onBOMChange(updatedRows)
       isProcessingRef.current = false
     }
-  }, [mouldedUnitRequired, mouldedUnitItem, productName, bomRows, onBOMChange])
+  }
 
   // Handle machined unit checkbox change
-  useEffect(() => {
+  const handleMachinedUnitChange = async (checked: boolean) => {
     if (isProcessingRef.current) return
+    
+    setMachinedUnitRequired(checked)
     
     const existingMachinedRow = bomRows.find(
       row => {
@@ -133,41 +140,38 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
       }
     )
 
-    if (machinedUnitRequired && !existingMachinedRow) {
+    if (checked && !existingMachinedRow) {
       // Create material in store if it doesn't exist
-      const addMachinedRow = async () => {
-        isProcessingRef.current = true
-        let materialId = machinedUnitItem?.id
-        let materialUnit = machinedUnitItem?.unit || "pcs"
+      isProcessingRef.current = true
+      let materialId = machinedUnitItem?.id
+      let materialUnit = machinedUnitItem?.unit || "pcs"
 
-        if (!machinedUnitItem && productName) {
-          // Create the material in store with quantity 0
-          const { addRawMaterial } = await import("@/lib/firebase/firestore-operations")
-          const newMaterialId = await addRawMaterial({
-            name: `Finished ${productName}`,
-            sku: `FIN-${productName.substring(0, 10).toUpperCase()}`,
-            quantity: 0,
-            unit: "pcs",
-            threshold: 10,
-            isFinished: true,
-          })
-          materialId = newMaterialId
-        }
-
-        if (materialId) {
-          const newRow: BOMRow = {
-            raw_material_id: materialId,
-            stage: "Assembling",
-            qty_per_piece: 1,
-            unit: materialUnit,
-            notes: "Auto-added: Machined unit",
-          }
-          onBOMChange([...bomRows, newRow])
-        }
-        isProcessingRef.current = false
+      if (!machinedUnitItem && productName) {
+        // Create the material in store with quantity 0
+        const { addRawMaterial } = await import("@/lib/firebase/firestore-operations")
+        const newMaterialId = await addRawMaterial({
+          name: `Finished ${productName}`,
+          sku: `FIN-${productName.substring(0, 10).toUpperCase()}`,
+          quantity: 0,
+          unit: "pcs",
+          threshold: 10,
+          isFinished: true,
+        })
+        materialId = newMaterialId
       }
-      addMachinedRow()
-    } else if (!machinedUnitRequired && existingMachinedRow) {
+
+      if (materialId) {
+        const newRow: BOMRow = {
+          raw_material_id: materialId,
+          stage: "Assembling",
+          qty_per_piece: 1,
+          unit: materialUnit,
+          notes: "Auto-added: Machined unit",
+        }
+        onBOMChange([...bomRows, newRow])
+      }
+      isProcessingRef.current = false
+    } else if (!checked && existingMachinedRow) {
       // Remove machined unit row (both placeholder and actual)
       isProcessingRef.current = true
       const updatedRows = bomRows.filter(
@@ -180,7 +184,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
       onBOMChange(updatedRows)
       isProcessingRef.current = false
     }
-  }, [machinedUnitRequired, machinedUnitItem, productName, bomRows, onBOMChange])
+  }
 
   const addRow = () => {
     const newRow: BOMRow = {
@@ -264,7 +268,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
               <Checkbox
                 id="moulded-unit"
                 checked={mouldedUnitRequired}
-                onCheckedChange={(checked) => setMouldedUnitRequired(checked === true)}
+                onCheckedChange={(checked) => handleMouldedUnitChange(checked === true)}
               />
               <label
                 htmlFor="moulded-unit"
@@ -278,7 +282,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
               <Checkbox
                 id="machined-unit"
                 checked={machinedUnitRequired}
-                onCheckedChange={(checked) => setMachinedUnitRequired(checked === true)}
+                onCheckedChange={(checked) => handleMachinedUnitChange(checked === true)}
               />
               <label
                 htmlFor="machined-unit"

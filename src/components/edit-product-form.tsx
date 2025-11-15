@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { BOMEditor } from "@/components/bom-editor";
+import { ImageUpload } from "@/components/image-upload";
 
 import type { FinalStock, BOMRow } from "@/lib/types";
 
@@ -32,11 +33,7 @@ const formSchema = z.object({
   price: z.coerce.number().min(0, "Price must be 0 or greater."),
   gstRate: z.coerce.number().min(0, "GST Rate must be 0 or greater."),
   threshold: z.coerce.number().min(0, "Threshold must be 0 or greater.").default(0),
-  imageUrl: z
-    .string()
-    .url("Please enter a valid URL.")
-    .or(z.literal(""))
-    .optional(),
+  imageUrl: z.string().optional(),
   imageHint: z.string().optional(),
 });
 
@@ -206,9 +203,13 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
           name="imageUrl"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Image URL (Optional)</FormLabel>
               <FormControl>
-                <Input placeholder="https://..." {...field} />
+                <ImageUpload
+                  value={field.value}
+                  onChange={field.onChange}
+                  folder="products"
+                  placeholder="Upload product image"
+                />
               </FormControl>
               <FormMessage />
             </FormItem>

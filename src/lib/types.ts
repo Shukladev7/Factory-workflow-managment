@@ -132,6 +132,7 @@ export type LogAction =
   | "Created"
   | "Updated"
   | "Deleted"
+  | "Restocked"
   | "Stock Adjustment (Batch)"
   | "Stock Adjustment (Manual)";
 

@@ -20,6 +20,7 @@ import * as z from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFinalStock } from "@/hooks/use-final-stock"
+import { SortControls, sortArray, type SortDirection } from "@/components/sort-controls"
 
 const formSchema = z.object({
   orderId: z.string().min(1, "Order ID is required"),
@@ -38,6 +39,7 @@ export default function OrdersPage() {
   const [isClient, setIsClient] = useState(false)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [sortDirection, setSortDirection] = useState<SortDirection>("none")
   const [orderTypes] = useLocalStorage<string[]>("orderTypes", [])
 
   useEffect(() => setIsClient(true), [])
@@ -47,16 +49,18 @@ export default function OrdersPage() {
     defaultValues: { orderId: "", productId: "", quantity: 1, orderType: "" },
   })
 
-  const filteredOrders = useMemo(() => {
+  const filteredAndSortedOrders = useMemo(() => {
     const q = searchQuery.toLowerCase()
-    return orders.filter((o) =>
+    const filtered = orders.filter((o) =>
       o.orderId.toLowerCase().includes(q) ||
       (o.name?.toLowerCase() || "").includes(q) ||
       o.productName?.toLowerCase().includes(q) ||
       o.orderType.toLowerCase().includes(q) ||
       o.id.toLowerCase().includes(q)
     )
-  }, [orders, searchQuery])
+    
+    return sortArray(filtered, sortDirection, (order) => order.orderId)
+  }, [orders, searchQuery, sortDirection])
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     const product = finalStock.find(p => p.id === values.productId)
@@ -204,8 +208,8 @@ export default function OrdersPage() {
         )}
       </PageHeader>
 
-      <div className="mb-4">
-        <div className="relative">
+      <div className="mb-4 flex gap-4 items-center">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by Order ID, Name, Type, or System ID..."
@@ -214,6 +218,11 @@ export default function OrdersPage() {
             className="pl-10"
           />
         </div>
+        <SortControls
+          sortDirection={sortDirection}
+          onSortChange={setSortDirection}
+          label="Sort Orders"
+        />
       </div>
 
       <Card>
@@ -230,14 +239,14 @@ export default function OrdersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredOrders.length === 0 ? (
+              {filteredAndSortedOrders.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                     No orders found.
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredOrders.map((o) => (
+                filteredAndSortedOrders.map((o: Order) => (
                   <TableRow key={o.id}>
                     <TableCell className="font-mono text-xs">{o.orderId}</TableCell>
                     <TableCell>{o.productName}</TableCell>

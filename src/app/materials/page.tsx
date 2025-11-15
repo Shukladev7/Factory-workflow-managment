@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import PageHeader from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -27,6 +27,7 @@ import { RestockDialog } from "@/components/restock-dialog"
 import * as XLSX from "xlsx"
 import { CSVImportDialog } from "@/components/csv-import-dialog"
 import { LogAction } from "@/lib/types"
+import { SortControls, sortArray, type SortDirection } from "@/components/sort-controls"
 
 export default function MaterialsPage() {
   const { rawMaterials, createRawMaterial, updateRawMaterial, deleteRawMaterial } = useRawMaterials()
@@ -38,6 +39,7 @@ export default function MaterialsPage() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [isClient, setIsClient] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [sortDirection, setSortDirection] = useState<SortDirection>("none")
   const { toast } = useToast()
   
   const canEditMaterials = canEdit("Raw Materials")
@@ -283,18 +285,22 @@ export default function MaterialsPage() {
     }
   }
 
+  const filteredAndSortedMaterials = useMemo(() => {
+    const filtered = rawMaterials.filter((material) => {
+      const query = searchQuery.toLowerCase()
+      return (
+        material.name.toLowerCase().includes(query) ||
+        material.sku.toLowerCase().includes(query) ||
+        material.id.toLowerCase().includes(query)
+      )
+    })
+
+    return sortArray(filtered, sortDirection, (material) => material.name)
+  }, [rawMaterials, searchQuery, sortDirection])
+
   if (!isClient) {
     return null
   }
-
-  const filteredMaterials = rawMaterials.filter((material) => {
-    const query = searchQuery.toLowerCase()
-    return (
-      material.name.toLowerCase().includes(query) ||
-      material.sku.toLowerCase().includes(query) ||
-      material.id.toLowerCase().includes(query)
-    )
-  })
 
   return (
     <>
@@ -335,8 +341,8 @@ export default function MaterialsPage() {
           </Dialog>
         )}
       </PageHeader>
-      <div className="mb-4">
-        <div className="relative">
+      <div className="mb-4 flex gap-4 items-center">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by name, SKU, or System ID..."
@@ -345,6 +351,11 @@ export default function MaterialsPage() {
             className="pl-10"
           />
         </div>
+        <SortControls
+          sortDirection={sortDirection}
+          onSortChange={setSortDirection}
+          label="Sort Materials"
+        />
       </div>
       <Card>
         <CardContent className="pt-6">
@@ -361,14 +372,14 @@ export default function MaterialsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredMaterials.length === 0 ? (
+              {filteredAndSortedMaterials.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                     No materials found matching your search.
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredMaterials.map((material) => (
+                filteredAndSortedMaterials.map((material: RawMaterial) => (
                   <TableRow key={material.id}>
                     <TableCell className="font-mono text-xs">{material.id}</TableCell>
                     <TableCell className="font-medium">{material.name}</TableCell>

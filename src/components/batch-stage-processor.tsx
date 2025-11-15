@@ -468,12 +468,17 @@ export function BatchStageProcessor({
           const selectedProcesses = batch.selectedProcesses || [];
           const isLastStage = selectedProcesses[selectedProcesses.length - 1] === stage;
           const isMachiningOnly = selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
+          const isMoldingAndMachiningOnly = selectedProcesses.length === 2 && 
+            selectedProcesses.includes("Molding") && selectedProcesses.includes("Machining");
 
           if (stage === "Molding" && formData.accepted > 0) {
             await createMouldedMaterial(batch, formData.accepted);
           } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
             await createFinishedMaterial(batch, formData.accepted);
-          } else if (isLastStage && stage !== "Molding" && !isMachiningOnly) {
+          } else if (stage === "Machining" && isMoldingAndMachiningOnly && formData.accepted > 0) {
+            // Special case: Molding + Machining only - add to Final Stock when Machining completes
+            await addToFinalStock(batch, formData.accepted);
+          } else if (isLastStage && stage !== "Molding" && !isMachiningOnly && !isMoldingAndMachiningOnly) {
             await addToFinalStock(batch, formData.accepted);
           }
 
@@ -544,12 +549,17 @@ export function BatchStageProcessor({
 
           const selectedProcesses = batch.selectedProcesses || [];
           const isMachiningOnly = selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
+          const isMoldingAndMachiningOnly = selectedProcesses.length === 2 && 
+            selectedProcesses.includes("Molding") && selectedProcesses.includes("Machining");
 
           if (stage === "Molding" && formData.accepted > 0) {
             await createMouldedMaterial(batch, formData.accepted);
           } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
             await createFinishedMaterial(batch, formData.accepted);
-          } else if (stage !== "Molding" && !isMachiningOnly) {
+          } else if (stage === "Machining" && isMoldingAndMachiningOnly && formData.accepted > 0) {
+            // Special case: Molding + Machining only - add to Final Stock when Machining completes
+            await addToFinalStock(batch, formData.accepted);
+          } else if (stage !== "Molding" && !isMachiningOnly && !isMoldingAndMachiningOnly) {
             await addToFinalStock(batch, formData.accepted);
           }
 
@@ -613,12 +623,17 @@ export function BatchStageProcessor({
 
           const selectedProcesses = batch.selectedProcesses || [];
           const isMachiningOnly = selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
+          const isMoldingAndMachiningOnly = selectedProcesses.length === 2 && 
+            selectedProcesses.includes("Molding") && selectedProcesses.includes("Machining");
 
           if (stage === "Molding" && formData.accepted > 0) {
             await createMouldedMaterial(batch, formData.accepted);
           } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
             await createFinishedMaterial(batch, formData.accepted);
-          } else if (stage !== "Molding" && !isMachiningOnly) {
+          } else if (stage === "Machining" && isMoldingAndMachiningOnly && formData.accepted > 0) {
+            // Special case: Molding + Machining only - add to Final Stock when Machining completes
+            await addToFinalStock(batch, formData.accepted);
+          } else if (stage !== "Molding" && !isMachiningOnly && !isMoldingAndMachiningOnly) {
             await addToFinalStock(batch, formData.accepted);
           }
 
@@ -631,6 +646,12 @@ export function BatchStageProcessor({
         return selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
       });
 
+      const hasMoldingAndMachiningOnlyBatch = batchesWithThisAsLastStage.some((batch) => {
+        const selectedProcesses = batch.selectedProcesses || [];
+        return selectedProcesses.length === 2 && 
+          selectedProcesses.includes("Molding") && selectedProcesses.includes("Machining");
+      });
+
       toast({
         title: "Batch Finished",
         description:
@@ -638,7 +659,9 @@ export function BatchStageProcessor({
             ? "Moulding completed. Items have been added to Store."
             : stage === "Machining" && hasMachiningOnlyBatch
               ? "Machining completed. Items have been added to Store."
-              : "The batch has been finalized and added to the Final Stock list.",
+              : stage === "Machining" && hasMoldingAndMachiningOnlyBatch
+                ? "Molding + Machining completed. Items have been added to Final Stock."
+                : "The batch has been finalized and added to the Final Stock list.",
       });
 
       setTimeout(() => {

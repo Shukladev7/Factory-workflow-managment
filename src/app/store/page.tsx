@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { format } from "date-fns"
 import PageHeader from "@/components/page-header"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RestockDialog } from "@/components/restock-dialog"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { EditMaterialForm } from "@/components/edit-material-form"
+import { SortControls, sortArray, type SortDirection } from "@/components/sort-controls"
 
 export default function StorePage() {
   // removed regularMaterials (raw materials) from destructure
@@ -31,6 +32,7 @@ export default function StorePage() {
   const [isRestockOpen, setIsRestockOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [sortDirection, setSortDirection] = useState<SortDirection>("none")
   const { toast } = useToast()
   
   const canEditStore = canEdit("Store")
@@ -158,17 +160,20 @@ export default function StorePage() {
     })
   }
 
+  const filterAndSortMaterials = useMemo(() => {
+    return (materials: RawMaterial[]) => {
+      const query = searchQuery.toLowerCase()
+      const filtered = materials.filter((material) => 
+        material.name.toLowerCase().includes(query) ||
+        material.sku.toLowerCase().includes(query) ||
+        material.id.toLowerCase().includes(query)
+      )
+      return sortArray(filtered, sortDirection, (material) => material.name)
+    }
+  }, [searchQuery, sortDirection])
+
   if (!isClient) {
     return null
-  }
-
-  const filterMaterials = (materials: RawMaterial[]) => {
-    const query = searchQuery.toLowerCase()
-    return materials.filter((material) => 
-      material.name.toLowerCase().includes(query) ||
-      material.sku.toLowerCase().includes(query) ||
-      material.id.toLowerCase().includes(query)
-    )
   }
 
   const renderMaterialsTable = (materials: RawMaterial[], title: string) => (
@@ -274,8 +279,8 @@ export default function StorePage() {
         {/* Raw materials export/button removed */}
       </PageHeader>
 
-      <div className="mb-4">
-        <div className="relative">
+      <div className="mb-4 flex gap-4 items-center">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by name, SKU, or System ID..."
@@ -284,6 +289,11 @@ export default function StorePage() {
             className="pl-10"
           />
         </div>
+        <SortControls
+          sortDirection={sortDirection}
+          onSortChange={setSortDirection}
+          label="Sort Materials"
+        />
       </div>
 
       <Tabs defaultValue="moulded" className="space-y-4">
@@ -304,11 +314,11 @@ export default function StorePage() {
         </TabsList>
 
         <TabsContent value="moulded">
-          {renderMaterialsTable(filterMaterials(mouldedMaterials), "Moulded Materials")}
+          {renderMaterialsTable(filterAndSortMaterials(mouldedMaterials), "Moulded Materials")}
         </TabsContent>
 
         <TabsContent value="finished">
-          {renderMaterialsTable(filterMaterials(finishedMaterials), "Machined Materials")}
+          {renderMaterialsTable(filterAndSortMaterials(finishedMaterials), "Machined Materials")}
         </TabsContent>
 
         {/* Raw tab removed entirely */}

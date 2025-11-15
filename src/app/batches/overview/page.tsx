@@ -1,12 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { format } from "date-fns"
 import PageHeader from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { PlusCircle, MoreHorizontal, FileDown, Eye } from "lucide-react"
+import { PlusCircle, MoreHorizontal, FileDown, Eye, Search } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import type { Batch, BatchStatus } from "@/lib/types"
 import {
@@ -42,6 +42,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import * as XLSX from "xlsx"
+import { Input } from "@/components/ui/input"
+import { SortControls, sortArray, type SortDirection } from "@/components/sort-controls"
 
 const statusColors: Record<BatchStatus, string> = {
   Completed: "bg-green-500",
@@ -60,6 +62,8 @@ export default function BatchesOverviewPage() {
   const [wastageBatch, setWastageBatch] = useState<Batch | null>(null)
   const [isWastageOpen, setIsWastageOpen] = useState(false)
   const [isClient, setIsClient] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [sortDirection, setSortDirection] = useState<SortDirection>("none")
   const { toast } = useToast()
   
   const canEditBatches = canEdit("Batches")
@@ -190,6 +194,20 @@ export default function BatchesOverviewPage() {
     })
   }
 
+  const filteredAndSortedBatches = useMemo(() => {
+    const query = searchQuery.toLowerCase()
+    const filtered = batches.filter((batch) =>
+      batch.id.toLowerCase().includes(query) ||
+      batch.productName.toLowerCase().includes(query) ||
+      getStatusLabel(batch).toLowerCase().includes(query) ||
+      (batch.selectedProcesses || []).some(process => 
+        process.toLowerCase().includes(query)
+      )
+    )
+    
+    return sortArray(filtered, sortDirection, (batch) => batch.id)
+  }, [batches, searchQuery, sortDirection])
+
   if (!isClient) {
     return null
   }
@@ -221,6 +239,24 @@ export default function BatchesOverviewPage() {
           </Dialog>
         )}
       </PageHeader>
+      
+      <div className="mb-4 flex gap-4 items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by Batch ID, Product, Status, or Process..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <SortControls
+          sortDirection={sortDirection}
+          onSortChange={setSortDirection}
+          label="Sort Batches"
+        />
+      </div>
+      
       <Card>
         <CardContent className="pt-6">
           <Table>
@@ -236,7 +272,14 @@ export default function BatchesOverviewPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {batches.map((batch) => {
+              {filteredAndSortedBatches.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                    No batches found matching your search.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredAndSortedBatches.map((batch) => {
                 const currentStatus = getStatus(batch)
                 return (
                   <TableRow key={batch.id}>
@@ -301,7 +344,8 @@ export default function BatchesOverviewPage() {
                     </TableCell>
                   </TableRow>
                 )
-              })}
+                })
+              )}
             </TableBody>
           </Table>
         </CardContent>
