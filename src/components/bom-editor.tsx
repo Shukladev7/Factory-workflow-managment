@@ -17,11 +17,12 @@ interface BOMEditorProps {
   readOnly?: boolean
   quantityMultiplier?: number
   productName?: string // Product name to identify moulded/machined units
+  selectedStages?: ProcessingStageName[] // Selected manufacturing stages for validation
 }
 
 const processingStages: ProcessingStageName[] = ["Molding", "Machining", "Assembling", "Testing"]
 
-export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMultiplier = 1, productName = "" }: BOMEditorProps) {
+export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMultiplier = 1, productName = "", selectedStages = [] }: BOMEditorProps) {
   const { rawMaterials, regularMaterials, mouldedMaterials, finishedMaterials } = useRawMaterials()
   const [mouldedUnitRequired, setMouldedUnitRequired] = useState(false)
   const [machinedUnitRequired, setMachinedUnitRequired] = useState(false)
@@ -80,35 +81,22 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
     )
 
     if (checked && !existingMouldedRow) {
-      // Create material in store if it doesn't exist
+      // Use placeholder ID for new products, actual material ID for existing products
       isProcessingRef.current = true
-      let materialId = mouldedUnitItem?.id
+      let materialId = mouldedUnitItem?.id || MOULDED_UNIT_ID
       let materialUnit = mouldedUnitItem?.unit || "pcs"
 
-      if (!mouldedUnitItem && productName) {
-        // Create the material in store with quantity 0
-        const { addRawMaterial } = await import("@/lib/firebase/firestore-operations")
-        const newMaterialId = await addRawMaterial({
-          name: `Moulded ${productName}`,
-          sku: `MLD-${productName.substring(0, 10).toUpperCase()}`,
-          quantity: 0,
-          unit: "pcs",
-          threshold: 10,
-          isMoulded: true,
-        })
-        materialId = newMaterialId
+      // Don't create materials in store during product creation - use placeholder instead
+      // The actual material will be created when the first batch is processed
+      
+      const newRow: BOMRow = {
+        raw_material_id: materialId,
+        stage: "Machining",
+        qty_per_piece: 1,
+        unit: materialUnit,
+        notes: "Auto-added: Moulded unit",
       }
-
-      if (materialId) {
-        const newRow: BOMRow = {
-          raw_material_id: materialId,
-          stage: "Machining",
-          qty_per_piece: 1,
-          unit: materialUnit,
-          notes: "Auto-added: Moulded unit",
-        }
-        onBOMChange([...bomRows, newRow])
-      }
+      onBOMChange([...bomRows, newRow])
       isProcessingRef.current = false
     } else if (!checked && existingMouldedRow) {
       // Remove moulded unit row (both placeholder and actual)
@@ -141,35 +129,22 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
     )
 
     if (checked && !existingMachinedRow) {
-      // Create material in store if it doesn't exist
+      // Use placeholder ID for new products, actual material ID for existing products
       isProcessingRef.current = true
-      let materialId = machinedUnitItem?.id
+      let materialId = machinedUnitItem?.id || MACHINED_UNIT_ID
       let materialUnit = machinedUnitItem?.unit || "pcs"
 
-      if (!machinedUnitItem && productName) {
-        // Create the material in store with quantity 0
-        const { addRawMaterial } = await import("@/lib/firebase/firestore-operations")
-        const newMaterialId = await addRawMaterial({
-          name: `Finished ${productName}`,
-          sku: `FIN-${productName.substring(0, 10).toUpperCase()}`,
-          quantity: 0,
-          unit: "pcs",
-          threshold: 10,
-          isFinished: true,
-        })
-        materialId = newMaterialId
+      // Don't create materials in store during product creation - use placeholder instead
+      // The actual material will be created when the first batch is processed
+      
+      const newRow: BOMRow = {
+        raw_material_id: materialId,
+        stage: "Assembling",
+        qty_per_piece: 1,
+        unit: materialUnit,
+        notes: "Auto-added: Machined unit",
       }
-
-      if (materialId) {
-        const newRow: BOMRow = {
-          raw_material_id: materialId,
-          stage: "Assembling",
-          qty_per_piece: 1,
-          unit: materialUnit,
-          notes: "Auto-added: Machined unit",
-        }
-        onBOMChange([...bomRows, newRow])
-      }
+      onBOMChange([...bomRows, newRow])
       isProcessingRef.current = false
     } else if (!checked && existingMachinedRow) {
       // Remove machined unit row (both placeholder and actual)
@@ -250,9 +225,20 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
           <p className="text-sm text-muted-foreground">
             Define materials required {quantityMultiplier > 1 ? `for ${quantityMultiplier} pieces` : "per 1 piece"}
           </p>
+          {selectedStages.length === 0 && (
+            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+              Please select manufacturing stages first to add BOM entries.
+            </div>
+          )}
         </div>
         {!readOnly && (
-          <Button type="button" variant="outline" size="sm" onClick={addRow}>
+          <Button 
+            type="button" 
+            variant="outline" 
+            size="sm" 
+            onClick={addRow}
+            disabled={selectedStages.length === 0}
+          >
             <PlusCircle className="mr-2 h-4 w-4" />
             Add Raw Material
           </Button>
@@ -363,7 +349,9 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {processingStages.map((stage) => (
+                        {processingStages
+                          .filter(stage => selectedStages.length === 0 || selectedStages.includes(stage))
+                          .map((stage) => (
                           <SelectItem key={stage} value={stage}>
                             {stage}
                           </SelectItem>

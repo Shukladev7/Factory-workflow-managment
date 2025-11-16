@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/use-permissions";
 import { canEditProcessingStage } from "@/lib/permissions";
 import { format } from "date-fns";
+import { validateBatchStageAccess } from "@/lib/manufacturing-stages-validation";
 import { useRouter } from "next/navigation";
 import {
   subscribeToBatchesForStage,
@@ -408,6 +409,8 @@ export function BatchStageProcessor({
   };
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
+    console.log("🚀 DEBUG: onSubmit function called for stage:", stage);
+    
     if (isSubmitting) return;
     
     console.log("[v0] Submitting form for stage:", stage, "with values:", values);
@@ -456,6 +459,10 @@ export function BatchStageProcessor({
           continue;
         }
 
+        // Debug: Check why the condition might not be met
+        console.log("DEBUG - Batch stage status:", batch.id, stage, "completed:", batch.processingStages[stage]?.completed);
+        console.log("DEBUG - Full batch processing stages:", batch.processingStages);
+        
         if (!batch.processingStages[stage]?.completed) {
           const nextDept = getNextDepartment(batch, stage);
           toast({
@@ -465,20 +472,36 @@ export function BatchStageProcessor({
 
           await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted);
 
+          // Get product's manufacturing stages to determine correct flow
+          const product = finalStock.find(p => p.name === batch.productName);
+          const productManufacturingStages = product?.manufacturingStages || batch.selectedProcesses || [];
+          
+          // Debug logging
+          console.log("DEBUG onSubmit - Batch:", batch.productName, "Stage:", stage);
+          console.log("DEBUG onSubmit - Product found:", !!product);
+          console.log("DEBUG onSubmit - Product manufacturing stages:", productManufacturingStages);
+          
           const selectedProcesses = batch.selectedProcesses || [];
           const isLastStage = selectedProcesses[selectedProcesses.length - 1] === stage;
           const isMachiningOnly = selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
-          const isMoldingAndMachiningOnly = selectedProcesses.length === 2 && 
-            selectedProcesses.includes("Molding") && selectedProcesses.includes("Machining");
+          
+          // Use product's manufacturing stages to determine if it should go to Final Stock
+          const productIsMoldingAndMachiningOnly = productManufacturingStages.length === 2 && 
+            productManufacturingStages.includes("Molding") && productManufacturingStages.includes("Machining");
+            
+          console.log("DEBUG onSubmit - productIsMoldingAndMachiningOnly:", productIsMoldingAndMachiningOnly);
 
           if (stage === "Molding" && formData.accepted > 0) {
             await createMouldedMaterial(batch, formData.accepted);
-          } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
-            await createFinishedMaterial(batch, formData.accepted);
-          } else if (stage === "Machining" && isMoldingAndMachiningOnly && formData.accepted > 0) {
-            // Special case: Molding + Machining only - add to Final Stock when Machining completes
+          } else if (stage === "Machining" && productIsMoldingAndMachiningOnly && formData.accepted > 0) {
+            // Special case: Product with Molding + Machining only - add to Final Stock when Machining completes
+            console.log("DEBUG onSubmit: Adding to Final Stock - Product has only Molding + Machining stages");
             await addToFinalStock(batch, formData.accepted);
-          } else if (isLastStage && stage !== "Molding" && !isMachiningOnly && !isMoldingAndMachiningOnly) {
+          } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
+            console.log("DEBUG onSubmit: Creating finished materials - Machining only batch");
+            await createFinishedMaterial(batch, formData.accepted);
+          } else if (isLastStage && stage !== "Molding" && !isMachiningOnly && !productIsMoldingAndMachiningOnly) {
+            console.log("DEBUG onSubmit: Adding to Final Stock - Last stage of multi-stage product");
             await addToFinalStock(batch, formData.accepted);
           }
 
@@ -514,6 +537,8 @@ export function BatchStageProcessor({
   }
 
   const handleEndCycle = async () => {
+    console.log("🚀 DEBUG: handleEndCycle function called for stage:", stage);
+    
     if (isEndingCycle) return;
     
     setIsEndingCycle(true);
@@ -544,22 +569,43 @@ export function BatchStageProcessor({
           continue;
         }
 
+        // Debug: Check handleEndCycle condition
+        console.log("DEBUG handleEndCycle - Batch stage status:", batch.id, stage, "completed:", batch.processingStages[stage]?.completed, "isCompleted:", isCompleted);
+        
         if (isCompleted && !batch.processingStages[stage]?.completed) {
           await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted);
 
+          // Get product's manufacturing stages to determine correct flow
+          const product = finalStock.find(p => p.name === batch.productName);
+          const productManufacturingStages = product?.manufacturingStages || batch.selectedProcesses || [];
+          
+          // Debug logging
+          console.log("DEBUG - Batch:", batch.productName, "Stage:", stage);
+          console.log("DEBUG - Product found:", !!product);
+          console.log("DEBUG - Product manufacturing stages:", productManufacturingStages);
+          
           const selectedProcesses = batch.selectedProcesses || [];
           const isMachiningOnly = selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
-          const isMoldingAndMachiningOnly = selectedProcesses.length === 2 && 
-            selectedProcesses.includes("Molding") && selectedProcesses.includes("Machining");
+          
+          // Use product's manufacturing stages to determine if it should go to Final Stock
+          // Check for both "Molding" and "Moulding" spelling variations
+          const productIsMoldingAndMachiningOnly = productManufacturingStages.length === 2 && 
+            (productManufacturingStages.includes("Molding") || productManufacturingStages.includes("Moulding")) && 
+            productManufacturingStages.includes("Machining");
+            
+          console.log("DEBUG - productIsMoldingAndMachiningOnly:", productIsMoldingAndMachiningOnly);
 
           if (stage === "Molding" && formData.accepted > 0) {
             await createMouldedMaterial(batch, formData.accepted);
-          } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
-            await createFinishedMaterial(batch, formData.accepted);
-          } else if (stage === "Machining" && isMoldingAndMachiningOnly && formData.accepted > 0) {
-            // Special case: Molding + Machining only - add to Final Stock when Machining completes
+          } else if (stage === "Machining" && productIsMoldingAndMachiningOnly && formData.accepted > 0) {
+            // Special case: Product with Molding + Machining only - add to Final Stock when Machining completes
+            console.log("DEBUG handleEndCycle: Adding to Final Stock - Product has only Molding + Machining stages");
             await addToFinalStock(batch, formData.accepted);
-          } else if (stage !== "Molding" && !isMachiningOnly && !isMoldingAndMachiningOnly) {
+          } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
+            console.log("DEBUG handleEndCycle: Creating finished materials - Machining only batch");
+            await createFinishedMaterial(batch, formData.accepted);
+          } else if (stage !== "Molding" && !isMachiningOnly && !productIsMoldingAndMachiningOnly) {
+            console.log("DEBUG handleEndCycle: Adding to Final Stock - Last stage of multi-stage product");
             await addToFinalStock(batch, formData.accepted);
           }
 
@@ -581,6 +627,8 @@ export function BatchStageProcessor({
   };
 
   const handleFinishBatch = async () => {
+    console.log("🚀 DEBUG: handleFinishBatch function called for stage:", stage);
+    
     if (isFinishing) return;
     
     setIsFinishing(true);
@@ -588,12 +636,21 @@ export function BatchStageProcessor({
     try {
       const values = form.getValues();
 
+      console.log("DEBUG handleFinishBatch - All batches:", batches.length);
+      console.log("DEBUG handleFinishBatch - Current stage:", stage);
+      
       const batchesWithThisAsLastStage = batches.filter((batch) => {
         const selectedProcesses = batch.selectedProcesses || [];
+        console.log("DEBUG handleFinishBatch - Batch:", batch.id, "selectedProcesses:", selectedProcesses, "lastStage:", selectedProcesses[selectedProcesses.length - 1]);
         return selectedProcesses[selectedProcesses.length - 1] === stage;
       });
 
-      if (batchesWithThisAsLastStage.length === 0) return;
+      console.log("DEBUG handleFinishBatch - Batches with this as last stage:", batchesWithThisAsLastStage.length);
+      
+      if (batchesWithThisAsLastStage.length === 0) {
+        console.log("DEBUG handleFinishBatch - No batches found with this as last stage, returning");
+        return;
+      }
 
       for (const batch of batchesWithThisAsLastStage) {
         const formData = values.batches.find((b) => b.id === batch.id);
@@ -621,19 +678,37 @@ export function BatchStageProcessor({
         if (!batch.processingStages[stage]?.completed) {
           await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted);
 
-          const selectedProcesses = batch.selectedProcesses || [];
-          const isMachiningOnly = selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
-          const isMoldingAndMachiningOnly = selectedProcesses.length === 2 && 
-            selectedProcesses.includes("Molding") && selectedProcesses.includes("Machining");
+// Get product's manufacturing stages to determine correct flow
+const product = finalStock.find(p => p.name === batch.productName);
+const productManufacturingStages = product?.manufacturingStages || batch.selectedProcesses || [];
 
+console.log("DEBUG handleFinishBatch - Product lookup:", batch.productName);
+console.log("DEBUG handleFinishBatch - Product found:", !!product);
+console.log("DEBUG handleFinishBatch - Product manufacturing stages:", productManufacturingStages);
+console.log("DEBUG handleFinishBatch - All finalStock products:", finalStock.map(p => p.name));
+
+const selectedProcesses = batch.selectedProcesses || [];
+const isMachiningOnly = selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
+
+// Use product's manufacturing stages to determine if it should go to Final Stock
+const productIsMoldingAndMachiningOnly = productManufacturingStages.length === 2 && 
+  productManufacturingStages.includes("Molding") && productManufacturingStages.includes("Machining");
+  
+console.log("DEBUG handleFinishBatch - productIsMoldingAndMachiningOnly:", productIsMoldingAndMachiningOnly);
+console.log("DEBUG handleFinishBatch - Current stage:", stage);
+
+  
           if (stage === "Molding" && formData.accepted > 0) {
             await createMouldedMaterial(batch, formData.accepted);
-          } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
-            await createFinishedMaterial(batch, formData.accepted);
-          } else if (stage === "Machining" && isMoldingAndMachiningOnly && formData.accepted > 0) {
-            // Special case: Molding + Machining only - add to Final Stock when Machining completes
+          } else if (stage === "Machining" && productIsMoldingAndMachiningOnly && formData.accepted > 0) {
+            // Special case: Product with Molding + Machining only - add to Final Stock when Machining completes
+            console.log("DEBUG: Adding to Final Stock - Product has only Molding + Machining stages");
             await addToFinalStock(batch, formData.accepted);
-          } else if (stage !== "Molding" && !isMachiningOnly && !isMoldingAndMachiningOnly) {
+          } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
+            console.log("DEBUG: Creating finished materials - Machining only batch");
+            await createFinishedMaterial(batch, formData.accepted);
+          } else if (stage !== "Molding" && !isMachiningOnly && !productIsMoldingAndMachiningOnly) {
+            console.log("DEBUG: Adding to Final Stock - Last stage of multi-stage product");
             await addToFinalStock(batch, formData.accepted);
           }
 
@@ -641,15 +716,17 @@ export function BatchStageProcessor({
         }
       }
 
+      // Check if any batch has a product with only Molding + Machining manufacturing stages
+      const hasProductWithMoldingAndMachiningOnly = batchesWithThisAsLastStage.some((batch) => {
+        const product = finalStock.find(p => p.name === batch.productName);
+        const productManufacturingStages = product?.manufacturingStages || [];
+        return productManufacturingStages.length === 2 && 
+          productManufacturingStages.includes("Molding") && productManufacturingStages.includes("Machining");
+      });
+
       const hasMachiningOnlyBatch = batchesWithThisAsLastStage.some((batch) => {
         const selectedProcesses = batch.selectedProcesses || [];
         return selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
-      });
-
-      const hasMoldingAndMachiningOnlyBatch = batchesWithThisAsLastStage.some((batch) => {
-        const selectedProcesses = batch.selectedProcesses || [];
-        return selectedProcesses.length === 2 && 
-          selectedProcesses.includes("Molding") && selectedProcesses.includes("Machining");
       });
 
       toast({
@@ -657,10 +734,10 @@ export function BatchStageProcessor({
         description:
           stage === "Molding"
             ? "Moulding completed. Items have been added to Store."
-            : stage === "Machining" && hasMachiningOnlyBatch
-              ? "Machining completed. Items have been added to Store."
-              : stage === "Machining" && hasMoldingAndMachiningOnlyBatch
-                ? "Molding + Machining completed. Items have been added to Final Stock."
+            : stage === "Machining" && hasProductWithMoldingAndMachiningOnly
+              ? "Machining completed. Items have been added to Final Stock (Product has only Molding + Machining stages)."
+              : stage === "Machining" && hasMachiningOnlyBatch
+                ? "Machining completed. Items have been added to Store."
                 : "The batch has been finalized and added to the Final Stock list.",
       });
 

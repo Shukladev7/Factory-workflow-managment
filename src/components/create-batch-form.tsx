@@ -126,6 +126,8 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
   const selectedProductId = form.watch("productId");
   const quantityToBuild = form.watch("quantityToBuild") || 1;
 
+  // Note: Removed auto-fill of manufacturing stages - users must manually select processes
+
   // Auto-load BOM when product or processes are selected
   useEffect(() => {
     if (selectedProductId && selectedProcesses.length > 0) {
@@ -414,12 +416,12 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
             <FormItem>
               <div className="mb-4">
                 <FormLabel className="text-base">
-                  Select Required Processes
+                  Manufacturing Processes
                 </FormLabel>
                 <p className="text-sm text-muted-foreground">
-                  Choose one single-select process (<strong>Moulding</strong> or{" "}
-                  <strong>Machining</strong>) or any combination of{" "}
-                  <strong>Assembling/Testing</strong>.
+                  Choose <strong>only one</strong> of these processes: either{" "}
+                  <strong>Moulding</strong> or <strong>Machining</strong> (cannot select both).
+                  Or choose any combination of <strong>Assembling/Testing</strong> instead.
                 </p>
               </div>
               <div className="space-y-4">
@@ -427,11 +429,10 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                 <div className="border rounded-lg p-4">
                   <div className="mb-3">
                     <p className="text-sm font-semibold">
-                      Single-Select Processes
+                      Primary Processes (Choose Only One)
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Choose either Moulding or Machining (cannot combine with
-                      other processes)
+                      Select either Moulding OR Machining (mutually exclusive)
                     </p>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -464,7 +465,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                                 Moulding
                               </FormLabel>
                               <p className="text-sm text-muted-foreground">
-                                Select for moulding process only
+                                Raw materials → Moulded materials
                               </p>
                             </div>
                           </FormItem>
@@ -501,7 +502,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                                 Machining
                               </FormLabel>
                               <p className="text-sm text-muted-foreground">
-                                Select for machining process only
+                                Raw materials → Finished materials
                               </p>
                             </div>
                           </FormItem>

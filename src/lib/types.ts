@@ -36,6 +36,7 @@ export interface FinalStock {
   gstRate: number;
   imageUrl: string;
   imageHint: string;
+  manufacturingStages: ProcessingStageName[]; // Selected manufacturing stages for this product
   bom_per_piece?: BOMRow[];
   batches?: BatchEntry[]; // Array of batch entries for this product
   quantity?: number; // Accepted quantity from the last completed stage

@@ -17,8 +17,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { BOMEditor } from "@/components/bom-editor";
 import { ImageUpload } from "@/components/image-upload";
+import { ManufacturingStagesSelector } from "@/components/manufacturing-stages-selector";
 
-import type { FinalStock, BOMRow } from "@/lib/types";
+import type { FinalStock, BOMRow, ProcessingStageName } from "@/lib/types";
 
 interface EditProductFormProps {
   product: FinalStock;
@@ -39,6 +40,9 @@ const formSchema = z.object({
 
 export function EditProductForm({ product, onProductUpdated }: EditProductFormProps) {
   const [bomRows, setBomRows] = useState<BOMRow[]>([]);
+  const [manufacturingStages, setManufacturingStages] = useState<ProcessingStageName[]>(
+    product.manufacturingStages || []
+  );
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -75,14 +79,39 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
     } else {
       setBomRows([]);
     }
+
+    // initialize manufacturing stages
+    setManufacturingStages(product.manufacturingStages || []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product]);
 
   function onSubmit(values: z.infer<typeof formSchema>) {
+    // Validate manufacturing stages selection
+    if (manufacturingStages.length === 0) {
+      form.setError("root", {
+        type: "manual",
+        message: "Please select at least one manufacturing stage."
+      });
+      return;
+    }
+
     // keep only valid BOM rows
     const validBomRows = bomRows.filter(
       (r) => r.raw_material_id && r.stage && Number(r.qty_per_piece) > 0,
     );
+
+    // Check if BOM entries are only for selected stages
+    const invalidBomRows = validBomRows.filter(
+      (row) => !manufacturingStages.includes(row.stage)
+    );
+
+    if (invalidBomRows.length > 0) {
+      form.setError("root", {
+        type: "manual",
+        message: `BOM entries found for unselected stages: ${invalidBomRows.map(r => r.stage).join(", ")}. Please remove these entries or select the corresponding stages.`
+      });
+      return;
+    }
 
     const updatedProduct: FinalStock = {
       // start from existing product so we keep any other fields
@@ -93,6 +122,7 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
       name: values.name,
       sku: values.sku,
       price: values.price,
+      manufacturingStages,
       gstRate: values.gstRate,
       threshold: values.threshold,
       imageUrl:
@@ -216,14 +246,30 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
           )}
         />
 
+        {/* Manufacturing Stages Selector */}
+        <div className="border-t pt-6">
+          <ManufacturingStagesSelector
+            selectedStages={manufacturingStages}
+            onStagesChange={setManufacturingStages}
+          />
+        </div>
+
         {/* BOM Editor */}
         <div className="border-t pt-6">
           <BOMEditor 
             bomRows={bomRows} 
             onBOMChange={setBomRows}
             productName={form.watch("name")}
+            selectedStages={manufacturingStages}
           />
         </div>
+
+        {/* Form Errors */}
+        {form.formState.errors.root && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-800">{form.formState.errors.root.message}</p>
+          </div>
+        )}
 
         <div className="flex justify-end">
           <Button type="submit">Save Changes</Button>
