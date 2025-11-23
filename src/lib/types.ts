@@ -147,6 +147,26 @@ export interface ActivityLog {
   user: string; // For now, we can hardcode a user like "System"
 }
 
+export interface ProductGroup {
+  id: string; // Firestore document ID
+  name: string;
+  description?: string;
+  productIds: string[]; // References to FinalStock.id
+  createdAt?: string;
+}
+
+export interface RestockRecord {
+  id: string; // Firestore document ID
+  productId: string; // FinalStock.id
+  productName: string;
+  quantityAdded: number;
+  companyName: string;
+  restockDate: string; // ISO string
+  previousStock: number;
+  updatedStock: number;
+  createdAt: string; // ISO string when record was created
+}
+
 export interface Order {
   id: string; // Firestore document ID
   orderId: string; // Manual order identifier

@@ -19,6 +19,8 @@ import type {
   ActivityLog,
   Employee,
   UnitOfMeasure,
+  ProductGroup,
+  RestockRecord,
 } from "@/lib/types";
 
 // Collection names
@@ -29,6 +31,8 @@ export const COLLECTIONS = {
   ACTIVITY_LOG: "activityLog",
   EMPLOYEES: "employees",
   UNITS: "unitsOfMeasure",
+  PRODUCT_GROUPS: "productGroups",
+  RESTOCKS: "restocks",
   ORDERS: "orders",
 } as const;
 
@@ -194,6 +198,7 @@ export async function getOrCreateProduct(
     gstRate: productData?.gstRate || 0,
     imageUrl: productData?.imageUrl || "/placeholder.svg?height=100&width=100",
     imageHint: productData?.imageHint || productName,
+    manufacturingStages: productData?.manufacturingStages || [],
     batches: productData?.batches || [],
     createdAt: new Date().toISOString(),
   };
@@ -343,6 +348,51 @@ export async function updateUnit(id: string, updates: Partial<UnitOfMeasure>) {
 export async function deleteUnit(id: string) {
   const unitRef = doc(db, COLLECTIONS.UNITS, id);
   await deleteDoc(unitRef);
+}
+
+// Product Group operations
+export async function addProductGroup(group: Omit<ProductGroup, "id">) {
+	const groupsRef = collection(db, COLLECTIONS.PRODUCT_GROUPS);
+
+	// Remove undefined fields so Firestore doesn't reject them (e.g. optional description)
+	const cleanedGroup = Object.fromEntries(
+		Object.entries({
+			...group,
+			createdAt: group.createdAt || new Date().toISOString(),
+		}).filter(([_, value]) => value !== undefined),
+	);
+
+	const docRef = await addDoc(groupsRef, cleanedGroup as Omit<ProductGroup, "id">);
+	return docRef.id;
+}
+
+export async function updateProductGroup(
+	id: string,
+	updates: Partial<ProductGroup>,
+) {
+	const groupRef = doc(db, COLLECTIONS.PRODUCT_GROUPS, id);
+
+	// Remove undefined fields from updates
+	const cleanedUpdates = Object.fromEntries(
+		Object.entries(updates).filter(([_, value]) => value !== undefined),
+	);
+
+	await updateDoc(groupRef, cleanedUpdates);
+}
+
+export async function deleteProductGroup(id: string) {
+	const groupRef = doc(db, COLLECTIONS.PRODUCT_GROUPS, id);
+	await deleteDoc(groupRef);
+}
+
+// Restock records operations
+export async function addRestockRecord(record: Omit<RestockRecord, "id">) {
+	const restocksRef = collection(db, COLLECTIONS.RESTOCKS);
+	const docRef = await addDoc(restocksRef, {
+		...record,
+		createdAt: record.createdAt || new Date().toISOString(),
+	});
+	return docRef.id;
 }
 
 // Batch operations for multiple updates

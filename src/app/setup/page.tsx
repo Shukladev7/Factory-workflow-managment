@@ -11,11 +11,15 @@ import { useLocalStorage } from "@/hooks/use-local-storage"
 import { useToast } from "@/hooks/use-toast"
 import { usePermissions } from "@/hooks/use-permissions"
 import { useEmployees } from "@/hooks/use-employee"
+import { useFinalStock } from "@/hooks/use-final-stock"
+import { useProductGroups } from "@/hooks/use-product-groups"
 import { ROLE_LABELS } from "@/lib/permissions"
-import type { UnitOfMeasure, Employee } from "@/lib/types"
+import type { UnitOfMeasure, Employee, ProductGroup } from "@/lib/types"
 import { getAllBatches, deleteBatch } from "@/lib/firebase"
 import { PlusCircle, Trash2, MoreHorizontal } from "lucide-react"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -67,6 +71,20 @@ export default function SetupPage() {
   const { toast } = useToast()
   const { canEdit, loading: permissionsLoading } = usePermissions()
   const [isClient, setIsClient] = useState(false)
+  const { finalStock } = useFinalStock()
+  const {
+    productGroups,
+    loading: productGroupsLoading,
+    error: productGroupsError,
+    createProductGroup,
+    updateProductGroup,
+    deleteProductGroup,
+  } = useProductGroups()
+  const [newGroupName, setNewGroupName] = useState("")
+  const [newGroupDescription, setNewGroupDescription] = useState("")
+  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<ProductGroup | null>(null)
+  const [editingProductIds, setEditingProductIds] = useState<string[]>([])
   
   const canAccessSetup = canEdit("Setup")
 
@@ -178,6 +196,52 @@ export default function SetupPage() {
     setSelectedEmployee(employee)
     setIsEmployeeFormOpen(true)
   }
+
+  const handleCreateGroup = async () => {
+    if (newGroupName.trim() === "") {
+      toast({ variant: "destructive", title: "Error", description: "Group name cannot be empty." })
+      return
+    }
+
+    try {
+      await createProductGroup({
+        name: newGroupName.trim(),
+        description: newGroupDescription.trim() || undefined,
+        productIds: [],
+      })
+      setNewGroupName("")
+      setNewGroupDescription("")
+      toast({ title: "Success", description: "Product group created." })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: e?.message || "Failed to create product group." })
+    }
+  }
+
+  const openGroupDialog = (group: ProductGroup) => {
+    setEditingGroup(group)
+    setEditingProductIds(group.productIds || [])
+    setIsGroupDialogOpen(true)
+  }
+
+  const handleToggleProductInGroup = (productId: string) => {
+    setEditingProductIds((prev) =>
+      prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId],
+    )
+  }
+
+  const handleSaveGroupProducts = async () => {
+    if (!editingGroup) return
+
+    try {
+      await updateProductGroup(editingGroup.id, { productIds: editingProductIds })
+      toast({ title: "Success", description: "Product group updated." })
+      setIsGroupDialogOpen(false)
+      setEditingGroup(null)
+      setEditingProductIds([])
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: e?.message || "Failed to update product group." })
+    }
+  }
   
   if (permissionsLoading) {
     return (
@@ -205,9 +269,10 @@ export default function SetupPage() {
     <>
       <PageHeader title="Setup" description="Manage application-wide settings and lists." />
       <Tabs defaultValue="units">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="units">Units of Measure</TabsTrigger>
           <TabsTrigger value="orderTypes">Order Types</TabsTrigger>
+          <TabsTrigger value="productGroups">Product Groups</TabsTrigger>
           <TabsTrigger value="employees">Employee Management</TabsTrigger>
           <TabsTrigger value="data">Data Management</TabsTrigger>
         </TabsList>
@@ -252,6 +317,152 @@ export default function SetupPage() {
                     <TableRow>
                       <TableCell colSpan={2} className="h-24 text-center">
                         No units of measure defined.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="productGroups">
+          <Card>
+            <CardHeader>
+              <CardTitle>Manage Product Groups</CardTitle>
+              <CardDescription>Create groups of products for quick ordering.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4 space-y-2">
+                <Input
+                  placeholder="Enter group name..."
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                />
+                <Textarea
+                  placeholder="Enter description (optional)..."
+                  value={newGroupDescription}
+                  onChange={(e) => setNewGroupDescription(e.target.value)}
+                />
+                <Button onClick={handleCreateGroup} disabled={productGroupsLoading}>
+                  <PlusCircle className="mr-2 h-4 w-4" /> Create Group
+                </Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Group Name</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Products</TableHead>
+                    <TableHead className="w-[160px] text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {productGroupsLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-24 text-center">
+                        Loading product groups...
+                      </TableCell>
+                    </TableRow>
+                  ) : productGroupsError ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-24 text-center text-destructive">
+                        Failed to load product groups.
+                      </TableCell>
+                    </TableRow>
+                  ) : productGroups && productGroups.length > 0 ? (
+                    productGroups.map((group) => (
+                      <TableRow key={group.id}>
+                        <TableCell className="font-medium">{group.name}</TableCell>
+                        <TableCell className="max-w-xs truncate">{group.description || "—"}</TableCell>
+                        <TableCell>{group.productIds?.length || 0}</TableCell>
+                        <TableCell className="text-right space-x-2">
+                          <Dialog open={isGroupDialogOpen && editingGroup?.id === group.id} onOpenChange={(open) => {
+                            if (!open) {
+                              setIsGroupDialogOpen(false)
+                              setEditingGroup(null)
+                              setEditingProductIds([])
+                            }
+                          }}>
+                            <DialogTrigger asChild>
+                              <Button variant="outline" size="sm" onClick={() => openGroupDialog(group)}>
+                                Manage Products
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="sm:max-w-xl max-h-[80vh] overflow-y-auto">
+                              <DialogHeader>
+                                <DialogTitle>Manage Products in {group.name}</DialogTitle>
+                                <DialogDescription>
+                                  Select which products belong to this group.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-2">
+                                {finalStock.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground">
+                                    No products in Final Stock. Add products before assigning them to groups.
+                                  </p>
+                                ) : (
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead className="w-[40px]"></TableHead>
+                                        <TableHead>Product</TableHead>
+                                        <TableHead>SKU</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {finalStock.map((product) => (
+                                        <TableRow key={product.id}>
+                                          <TableCell>
+                                            <Checkbox
+                                              checked={editingProductIds.includes(product.id)}
+                                              onCheckedChange={() => handleToggleProductInGroup(product.id)}
+                                            />
+                                          </TableCell>
+                                          <TableCell className="font-medium">{product.name}</TableCell>
+                                          <TableCell>{product.sku}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                )}
+                              </div>
+                              <div className="flex justify-end gap-2 pt-4">
+                                <Button variant="outline" onClick={() => {
+                                  setIsGroupDialogOpen(false)
+                                  setEditingGroup(null)
+                                  setEditingProductIds([])
+                                }}>
+                                  Cancel
+                                </Button>
+                                <Button onClick={handleSaveGroupProducts}>Save</Button>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={async () => {
+                              try {
+                                await deleteProductGroup(group.id)
+                                toast({ title: "Success", description: "Product group deleted." })
+                              } catch (e: any) {
+                                toast({
+                                  variant: "destructive",
+                                  title: "Error",
+                                  description: e?.message || "Failed to delete product group.",
+                                })
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={4} className="h-24 text-center">
+                        No product groups defined.
                       </TableCell>
                     </TableRow>
                   )}

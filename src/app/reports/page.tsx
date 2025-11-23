@@ -5,7 +5,7 @@ import PageHeader from "@/components/page-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { usePermissions } from "@/hooks/use-permissions"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ShieldX, Package, ShoppingCart } from "lucide-react"
+import { ShieldX, Package, ShoppingCart, PlusCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export default function ReportsPage() {
@@ -89,6 +89,32 @@ export default function ReportsPage() {
             <CardContent>
               <p className="text-sm text-muted-foreground">
                 View order reports with customer information, product details, quantities, and order types. Filter by date range and order ID, and download CSV reports.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/reports/restocking">
+          <Card className={cn(
+            "transition-all hover:shadow-lg hover:border-primary cursor-pointer h-full"
+          )}>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <PlusCircle className="h-6 w-6 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <CardTitle>Restocking Report</CardTitle>
+                  <CardDescription>
+                    Track product restocking events with supplier and stock change details
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                View a history of restocks for finished products, including company name, quantity added,
+                and previous vs updated stock levels.
               </p>
             </CardContent>
           </Card>

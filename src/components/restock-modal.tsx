@@ -27,13 +27,15 @@ const restockSchema = z.object({
   quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
   batchId: z.string().min(1, "Batch ID is required"),
   sku: z.string().min(1, "SKU is required"),
+  companyName: z.string().min(1, "Company Name is required"),
+  restockDate: z.string().min(1, "Restock date is required"),
 });
 
 interface RestockModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   productName: string;
-  onRestock: (data: { quantity: number; batchId: string; sku: string }) => void;
+  onRestock: (data: { quantity: number; batchId: string; sku: string; companyName: string; restockDate: string }) => void;
 }
 
 export function RestockModal({
@@ -50,6 +52,8 @@ export function RestockModal({
       quantity: 1,
       batchId: `BATCH-${Date.now()}`,
       sku: `SKU-${Date.now()}`,
+			companyName: "",
+			restockDate: new Date().toISOString().slice(0, 10),
     },
   });
 
@@ -123,6 +127,32 @@ export function RestockModal({
                 </FormItem>
               )}
             />
+				<FormField
+					control={form.control}
+					name="companyName"
+					render={({ field }) => (
+						<FormItem>
+							<FormLabel>Company Name</FormLabel>
+							<FormControl>
+								<Input placeholder="Enter company name" {...field} />
+							</FormControl>
+							<FormMessage />
+						</FormItem>
+					)}
+				/>
+				<FormField
+					control={form.control}
+					name="restockDate"
+					render={({ field }) => (
+						<FormItem>
+							<FormLabel>Restock Date</FormLabel>
+							<FormControl>
+								<Input type="date" {...field} />
+							</FormControl>
+							<FormMessage />
+						</FormItem>
+					)}
+				/>
             <div className="flex justify-end gap-2">
               <Button
                 type="button"

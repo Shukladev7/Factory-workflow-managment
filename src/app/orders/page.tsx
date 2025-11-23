@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useToast } from "@/hooks/use-toast"
 import { usePermissions } from "@/hooks/use-permissions"
 import { useLocalStorage } from "@/hooks/use-local-storage"
-import type { Order } from "@/lib/types"
+import type { Order, ProductGroup } from "@/lib/types"
 import { useOrders } from "@/hooks/use-orders"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { useForm } from "react-hook-form"
@@ -20,18 +20,18 @@ import * as z from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFinalStock } from "@/hooks/use-final-stock"
+import { useProductGroups } from "@/hooks/use-product-groups"
 import { SortControls, sortArray, type SortDirection } from "@/components/sort-controls"
 
 const formSchema = z.object({
   orderId: z.string().min(1, "Order ID is required"),
-  productId: z.string().min(1, "Product is required"),
-  quantity: z.coerce.number().min(0.0001, "Quantity must be greater than 0"),
   orderType: z.string().min(1, "Order Type is required"),
 })
 
 export default function OrdersPage() {
   const { orders, createOrder, deleteOrder } = useOrders()
   const { finalStock, updateFinalStock } = useFinalStock()
+  const { productGroups, loading: productGroupsLoading } = useProductGroups()
   const { toast } = useToast()
   const { canEdit } = usePermissions()
   const canEditOrders = canEdit("Orders")
@@ -41,13 +41,23 @@ export default function OrdersPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [sortDirection, setSortDirection] = useState<SortDirection>("none")
   const [orderTypes] = useLocalStorage<string[]>("orderTypes", [])
+  const [selectedGroupId, setSelectedGroupId] = useState("")
+  const [lineItems, setLineItems] = useState<
+    { productId: string; quantity: number }
+  >([])
+  const [newLineProductId, setNewLineProductId] = useState("")
+  const [newLineQuantity, setNewLineQuantity] = useState<string>("1")
 
   useEffect(() => setIsClient(true), [])
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { orderId: "", productId: "", quantity: 1, orderType: "" },
+    defaultValues: { orderId: "", orderType: "" },
   })
+
+  const finalStockMap = useMemo(() => {
+    return new Map(finalStock.map((p) => [p.id, p]))
+  }, [finalStock])
 
   const filteredAndSortedOrders = useMemo(() => {
     const q = searchQuery.toLowerCase()
@@ -58,58 +68,148 @@ export default function OrdersPage() {
       o.orderType.toLowerCase().includes(q) ||
       o.id.toLowerCase().includes(q)
     )
-    
+
     return sortArray(filtered, sortDirection, (order) => order.orderId)
   }, [orders, searchQuery, sortDirection])
 
+  const handleSelectGroup = (groupId: string) => {
+    setSelectedGroupId(groupId)
+    const group = (productGroups as ProductGroup[] | undefined)?.find((g) => g.id === groupId)
+    if (!group) {
+      setLineItems([])
+      return
+    }
+    const items = (group.productIds || [])
+      .map((pid) => finalStockMap.get(pid))
+      .filter((p): p is (typeof finalStock)[number] => !!p)
+    setLineItems(items.map((p) => ({ productId: p.id, quantity: 1 })))
+  }
+
+  const handleAddLineItem = () => {
+    if (!newLineProductId) {
+      toast({ variant: "destructive", title: "Error", description: "Select a product to add." })
+      return
+    }
+    const quantityNumber = Number(newLineQuantity)
+    if (!Number.isFinite(quantityNumber) || quantityNumber <= 0) {
+      toast({ variant: "destructive", title: "Error", description: "Quantity must be greater than 0." })
+      return
+    }
+    if (lineItems.some((li) => li.productId === newLineProductId)) {
+      toast({ variant: "destructive", title: "Error", description: "Product is already in the list." })
+      return
+    }
+    setLineItems((prev) => [...prev, { productId: newLineProductId, quantity: quantityNumber }])
+    setNewLineProductId("")
+    setNewLineQuantity("1")
+  }
+
+  const handleUpdateLineQuantity = (productId: string, value: string) => {
+    const quantityNumber = Number(value)
+    setLineItems((prev) =>
+      prev.map((li) =>
+        li.productId === productId
+          ? { ...li, quantity: Number.isFinite(quantityNumber) && quantityNumber > 0 ? quantityNumber : li.quantity }
+          : li,
+      ),
+    )
+  }
+
+  const handleRemoveLine = (productId: string) => {
+    setLineItems((prev) => prev.filter((li) => li.productId !== productId))
+  }
+
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    const product = finalStock.find(p => p.id === values.productId)
-    if (!product) {
-      toast({ variant: "destructive", title: "Error", description: "Selected product not found" })
+    if (lineItems.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Add at least one product to the order." })
       return
     }
 
-    // Calculate available stock from batches
-    const batches = [...(product.batches || [])]
-    const totalAvailable = batches.reduce((sum, b) => sum + Number(b.quantity ?? 0), 0)
-
-    if (values.quantity > totalAvailable) {
-      toast({ variant: "destructive", title: "Insufficient Stock", description: `Available: ${totalAvailable}, Requested: ${values.quantity}` })
-      return
+    // Validate stock for all line items first
+    for (const item of lineItems) {
+      const product = finalStockMap.get(item.productId)
+      if (!product) {
+        toast({ variant: "destructive", title: "Error", description: "One of the selected products was not found." })
+        return
+      }
+      const batches = [...(product.batches || [])]
+      const totalAvailable = batches.reduce((sum, b) => sum + Number(b.quantity ?? 0), 0)
+      if (item.quantity > totalAvailable) {
+        toast({
+          variant: "destructive",
+          title: "Insufficient Stock",
+          description: `${product.name}: Available ${totalAvailable}, Requested ${item.quantity}`,
+        })
+        return
+      }
     }
 
-    // FIFO: subtract from oldest batches first
-    const sorted = batches
-      .map(b => ({ ...b }))
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    // All good, compute updated batches per product and create orders
+    const updatedBatchesByProduct = new Map<string, any[]>()
 
-    let remaining = Number(values.quantity)
-    for (const b of sorted) {
-      if (remaining <= 0) break
-      const qty = Number(b.quantity ?? 0)
-      const take = Math.min(qty, remaining)
-      b.quantity = qty - take
-      remaining -= take
+    for (const item of lineItems) {
+      const product = finalStockMap.get(item.productId)!
+      const originalBatches = [...(product.batches || [])]
+      const sorted = originalBatches
+        .map((b) => ({ ...b }))
+        .sort(
+          (a, b) =>
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        )
+      let remaining = Number(item.quantity)
+      for (const b of sorted) {
+        if (remaining <= 0) break
+        const qty = Number(b.quantity ?? 0)
+        const take = Math.min(qty, remaining)
+        b.quantity = qty - take
+        remaining -= take
+      }
+      const updatedById = new Map(sorted.map((b) => [b.batchId, b]))
+      const updatedBatches = (product.batches || []).map(
+        (b) => updatedById.get(b.batchId) || b,
+      )
+      updatedBatchesByProduct.set(product.id, updatedBatches)
     }
 
-    // Persist updated batches back in original order (by batchId)
-    const updatedById = new Map(sorted.map(b => [b.batchId, b]))
-    const updatedBatches = (product.batches || []).map(b => updatedById.get(b.batchId) || b)
-
-    const newOrder: Omit<Order, "id"> = {
-      ...values,
-      productName: product.name,
-      createdAt: new Date().toISOString(),
-    }
-
+    const now = new Date().toISOString()
     try {
-      await updateFinalStock(product.id, { batches: updatedBatches })
-      await createOrder(newOrder)
-      toast({ title: "Order Created", description: `Reserved ${values.quantity} from ${product.name}.` })
+      // Update stock for all affected products
+      for (const [productId, batches] of updatedBatchesByProduct.entries()) {
+        await updateFinalStock(productId, { batches })
+      }
+
+      // Create one order per line item, sharing the same orderId and orderType
+      for (const item of lineItems) {
+        const product = finalStockMap.get(item.productId)!
+        const newOrder: Omit<Order, "id"> = {
+          orderId: values.orderId,
+          orderType: values.orderType,
+          productId: product.id,
+          productName: product.name,
+          quantity: item.quantity,
+          createdAt: now,
+        }
+        await createOrder(newOrder)
+      }
+
+      toast({
+        title: "Order Created",
+        description: `Created ${lineItems.length} order line${
+          lineItems.length > 1 ? "s" : ""
+        } for ${values.orderId}.`,
+      })
       setIsCreateOpen(false)
-      form.reset({ orderId: "", productId: "", quantity: 1, orderType: "" })
+      form.reset({ orderId: "", orderType: "" })
+      setSelectedGroupId("")
+      setLineItems([])
+      setNewLineProductId("")
+      setNewLineQuantity("1")
     } catch (e) {
-      toast({ variant: "destructive", title: "Error", description: "Failed to create order or update stock" })
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to create order or update stock",
+      })
     }
   }
 
@@ -125,14 +225,14 @@ export default function OrdersPage() {
                 <PlusCircle className="mr-2 h-4 w-4" /> New Order
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[520px]">
+            <DialogContent className="sm:max-w-[720px]">
               <DialogHeader>
                 <DialogTitle>Create Order</DialogTitle>
                 <DialogDescription>Enter order details.</DialogDescription>
               </DialogHeader>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-2">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <FormField control={form.control} name="orderId" render={({ field }) => (
                       <FormItem>
                         <FormLabel>Order ID</FormLabel>
@@ -142,63 +242,142 @@ export default function OrdersPage() {
                         <FormMessage />
                       </FormItem>
                     )} />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <FormField control={form.control} name="productId" render={({ field }) => (
+                    <FormField control={form.control} name="orderType" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Product</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={finalStock.length ? "Select product" : "Add products in Final Stock"} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {finalStock.length === 0 ? (
-                              <div className="p-2 text-sm text-muted-foreground">No products in Final Stock.</div>
-                            ) : (
-                              finalStock.map((p) => (
-                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    <FormField control={form.control} name="quantity" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Quantity</FormLabel>
+                        <FormLabel>Order Type</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.0001" min="0" placeholder="1" {...field} />
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <SelectTrigger>
+                              <SelectValue placeholder={orderTypes.length ? "Select type" : "Define types in Setup"} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {orderTypes.length === 0 ? (
+                                <div className="p-2 text-sm text-muted-foreground">No order types defined in Setup.</div>
+                              ) : (
+                                orderTypes.map((t) => (
+                                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
-                    <FormField control={form.control} name="orderType" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Order Type</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={orderTypes.length ? "Select type" : "Define types in Setup"} />
-                            </SelectTrigger>
-                          </FormControl>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">Product Group (optional)</p>
+                      <Select
+                        value={selectedGroupId}
+                        onValueChange={handleSelectGroup}
+                        disabled={productGroupsLoading}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={productGroupsLoading ? "Loading groups..." : "Select group (optional)"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {!productGroupsLoading && (!productGroups || productGroups.length === 0) ? (
+                            <div className="p-2 text-sm text-muted-foreground">No product groups defined.</div>
+                          ) : (
+                            (productGroups as ProductGroup[] | undefined)?.map((g) => (
+                              <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Selecting a group will pre-fill the product list below. You can still add or remove
+                        products before creating the order.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium mb-1">Add Product</p>
+                        <Select value={newLineProductId} onValueChange={setNewLineProductId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder={finalStock.length ? "Select product" : "Add products in Final Stock"} />
+                          </SelectTrigger>
                           <SelectContent>
-                            {orderTypes.length === 0 ? (
-                              <div className="p-2 text-sm text-muted-foreground">No order types defined in Setup.</div>
+                            {finalStock.length === 0 ? (
+                              <div className="p-2 text-sm text-muted-foreground">No products in Final Stock.</div>
                             ) : (
-                              orderTypes.map((t) => (
-                                <SelectItem key={t} value={t}>{t}</SelectItem>
-                              ))
+                              finalStock
+                                .filter((p) => !lineItems.some((li) => li.productId === p.id))
+                                .map((p) => (
+                                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                ))
                             )}
                           </SelectContent>
                         </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
+                      </div>
+                      <div className="w-32">
+                        <p className="text-sm font-medium mb-1">Quantity</p>
+                        <Input
+                          type="number"
+                          step="0.0001"
+                          min="0"
+                          value={newLineQuantity}
+                          onChange={(e) => setNewLineQuantity(e.target.value)}
+                        />
+                      </div>
+                      <Button type="button" variant="outline" onClick={handleAddLineItem}>
+                        <PlusCircle className="mr-2 h-4 w-4" /> Add to List
+                      </Button>
+                    </div>
+                    <div className="border rounded-md">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Product</TableHead>
+                            <TableHead className="w-32">Quantity</TableHead>
+                            <TableHead className="w-32">Available</TableHead>
+                            <TableHead className="w-[60px] text-right">Remove</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {lineItems.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4} className="h-16 text-center text-muted-foreground text-sm">
+                                No products added. Select a group or add products above.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            lineItems.map((item) => {
+                              const product = finalStockMap.get(item.productId)
+                              const batches = [...(product?.batches || [])]
+                              const totalAvailable = batches.reduce((sum, b) => sum + Number(b.quantity ?? 0), 0)
+                              return (
+                                <TableRow key={item.productId}>
+                                  <TableCell>{product?.name || "Unknown product"}</TableCell>
+                                  <TableCell>
+                                    <Input
+                                      type="number"
+                                      step="0.0001"
+                                      min="0"
+                                      value={item.quantity}
+                                      onChange={(e) => handleUpdateLineQuantity(item.productId, e.target.value)}
+                                    />
+                                  </TableCell>
+                                  <TableCell>{totalAvailable}</TableCell>
+                                  <TableCell className="text-right">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleRemoveLine(item.productId)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </div>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end pt-2">
                     <Button type="submit">Create</Button>
                   </div>
                 </form>

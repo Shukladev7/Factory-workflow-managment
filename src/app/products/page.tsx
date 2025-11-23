@@ -336,6 +336,7 @@ export default function ProductsPage() {
       gstRate: Number(row.gstRate),
       imageUrl: row.imageUrl?.trim() || "/diverse-products-still-life.png",
       imageHint: row.imageHint?.trim() || row.name.trim(),
+      manufacturingStages: [],
       batches: [], // Initialize with empty batches array
     };
   };
@@ -385,15 +386,22 @@ export default function ProductsPage() {
 
   const handleRestock = async (
     product: GroupedProduct,
-    data: { quantity: number; batchId: string; sku: string }
+    data: { quantity: number; batchId: string; sku: string; companyName: string; restockDate: string },
   ) => {
     try {
       if (!product.productTemplate) {
         throw new Error("Product template not found");
       }
 
-      // Import the function dynamically to avoid circular imports
-      const { addBatchToProduct } = await import("@/lib/firebase/firestore-operations");
+      // Import the functions dynamically to avoid circular imports
+      const { addBatchToProduct, addRestockRecord } = await import("@/lib/firebase/firestore-operations");
+
+      const existingBatches = product.productTemplate.batches || [];
+      const previousStock = existingBatches.reduce(
+        (sum, b) => sum + Number(b.quantity ?? 0),
+        0,
+      );
+      const updatedStock = previousStock + Number(data.quantity);
 
       const newBatch = {
         batchId: data.batchId,
@@ -405,11 +413,22 @@ export default function ProductsPage() {
 
       await addBatchToProduct(product.productTemplate.id, newBatch);
 
+      await addRestockRecord({
+        productId: product.productTemplate.id,
+        productName: product.productName,
+        quantityAdded: data.quantity,
+        companyName: data.companyName,
+        restockDate: new Date(data.restockDate + "T00:00:00").toISOString(),
+        previousStock,
+        updatedStock,
+        createdAt: new Date().toISOString(),
+      });
+
       await createActivityLog({
         recordId: product.productTemplate.id,
         recordType: "FinalStock",
         action: "Restocked",
-        details: `Added ${data.quantity} units via batch ${data.batchId}`,
+        details: `Added ${data.quantity} units via batch ${data.batchId} from ${data.companyName} (prev: ${previousStock}, new: ${updatedStock}).`,
         timestamp: new Date().toISOString(),
         user: "System",
       });
