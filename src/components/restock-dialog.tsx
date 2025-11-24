@@ -27,13 +27,18 @@ import { type RawMaterial } from '@/lib/types';
 
 const formSchema = z.object({
   quantity: z.coerce.number().min(1, 'Restock quantity must be greater than 0.'),
+  companyName: z.string().min(1, 'Company name is required.'),
+  restockDate: z.string().min(1, 'Restock date is required.'),
 });
 
 interface RestockDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   material: RawMaterial;
-  onRestock: (material: RawMaterial, quantity: number) => void;
+  onRestock: (
+    material: RawMaterial,
+    data: { quantity: number; companyName: string; restockDate: string },
+  ) => void;
 }
 
 export function RestockDialog({
@@ -46,6 +51,8 @@ export function RestockDialog({
     resolver: zodResolver(formSchema),
     defaultValues: {
       quantity: 1,
+      companyName: '',
+      restockDate: new Date().toISOString().slice(0, 10),
     },
   });
 
@@ -57,7 +64,11 @@ export function RestockDialog({
   };
 
   function onSubmit(values: z.infer<typeof formSchema>) {
-    onRestock(material, values.quantity);
+    onRestock(material, {
+      quantity: values.quantity,
+      companyName: values.companyName,
+      restockDate: values.restockDate,
+    });
     handleOpenChange(false);
   }
 
@@ -80,6 +91,32 @@ export function RestockDialog({
                   <FormLabel>Quantity to Add</FormLabel>
                   <FormControl>
                     <Input type="number" placeholder="0" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="companyName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Company Name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Enter company name" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="restockDate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Restock Date</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

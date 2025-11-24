@@ -91,18 +91,36 @@ export default function StorePage() {
     }
   }
 
-  const handleRestock = async (material: RawMaterial, quantity: number) => {
+  const handleRestock = async (
+    material: RawMaterial,
+    data: { quantity: number; companyName: string; restockDate: string },
+  ) => {
     try {
+      const quantity = Number(data.quantity) || 0
       const oldQuantity = Number(material.quantity) || 0
-      const newQuantity = oldQuantity + Number(quantity)
+      const newQuantity = oldQuantity + quantity
       const updatedMaterial = { ...material, quantity: newQuantity }
 
       await updateRawMaterial(material.id, updatedMaterial)
+
+      // Record in central Restocks collection for reporting
+      const { addRestockRecord } = await import("@/lib/firebase/firestore-operations")
+      await addRestockRecord({
+        productId: material.id,
+        productName: material.name,
+        quantityAdded: quantity,
+        companyName: data.companyName,
+        restockDate: new Date(data.restockDate + "T00:00:00").toISOString(),
+        previousStock: oldQuantity,
+        updatedStock: newQuantity,
+        createdAt: new Date().toISOString(),
+      })
+
       await createActivityLogEntry({
         recordId: material.id,
         recordType: "RawMaterial",
         action: "Stock Adjustment (Manual)",
-        details: `Restocked ${quantity} ${material.unit}. Old quantity: ${oldQuantity}, New quantity: ${newQuantity}.`,
+        details: `Restocked ${quantity} ${material.unit} from ${data.companyName}. Old quantity: ${oldQuantity}, New quantity: ${newQuantity}.`,
       })
       toast({
         title: "Material Restocked",
