@@ -18,9 +18,9 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         children
       ) : (
         <>
-          <div className="flex h-screen">
+          <div className="flex min-h-screen">
             <AppSidebar />
-            <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
+            <main className="flex-1 p-4 pt-20 md:pt-6 lg:p-8 lg:pt-8">{children}</main>
           </div>
           <StockNotifier />
         </>
@@ -35,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="h-full overflow-hidden">
+    <html lang="en" className="h-full">
       <head>
         <title>StockPilot</title>
         <meta name="description" content="Inventory management for your production plant." />
@@ -48,7 +48,7 @@ export default function RootLayout({
         {/* Add viewport meta tag for proper mobile rendering */}
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
       </head>
-      <body className="font-body antialiased h-full bg-background overflow-hidden">
+      <body className="font-body antialiased min-h-screen bg-background">
         <LayoutContent>{children}</LayoutContent>
         <Toaster />
       </body>

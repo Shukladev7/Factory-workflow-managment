@@ -152,6 +152,7 @@ export interface ProductGroup {
   name: string;
   description?: string;
   productIds: string[]; // References to FinalStock.id
+  productQuantities?: Record<string, number>; // Default quantity per productId for orders
   createdAt?: string;
 }
 

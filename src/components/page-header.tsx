@@ -8,16 +8,16 @@ interface PageHeaderProps {
 
 const PageHeader: FC<PageHeaderProps> = ({ title, description, children }) => {
   return (
-    <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
+    <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-5">
       <div className="grid gap-1">
-        <h1 className="font-bold text-2xl md:text-3xl text-foreground">
+        <h1 className="font-bold text-3xl md:text-4xl text-foreground">
           {title}
         </h1>
         {description && (
-          <p className="text-muted-foreground">{description}</p>
+          <p className="text-base md:text-lg text-muted-foreground">{description}</p>
         )}
       </div>
-      {children && <div className="flex items-center gap-2">{children}</div>}
+      {children && <div className="flex items-center gap-3">{children}</div>}
     </div>
   );
 };

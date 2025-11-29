@@ -79,10 +79,18 @@ export default function OrdersPage() {
       setLineItems([])
       return
     }
-    const items = (group.productIds || [])
-      .map((pid) => finalStockMap.get(pid))
-      .filter((p): p is (typeof finalStock)[number] => !!p)
-    setLineItems(items.map((p) => ({ productId: p.id, quantity: 1 })))
+    const productIds = group.productIds || []
+    const items = productIds
+      .map((pid) => {
+        const product = finalStockMap.get(pid)
+        if (!product) return null
+        const defaultQty = group.productQuantities?.[pid]
+        const quantity = defaultQty && defaultQty > 0 ? defaultQty : 1
+        return { productId: product.id, quantity }
+      })
+      .filter((item): item is { productId: string; quantity: number } => !!item)
+
+    setLineItems(items)
   }
 
   const handleAddLineItem = () => {

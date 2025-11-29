@@ -85,6 +85,7 @@ export default function SetupPage() {
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false)
   const [editingGroup, setEditingGroup] = useState<ProductGroup | null>(null)
   const [editingProductIds, setEditingProductIds] = useState<string[]>([])
+  const [editingProductQuantities, setEditingProductQuantities] = useState<Record<string, string>>({})
   
   const canAccessSetup = canEdit("Setup")
 
@@ -219,25 +220,63 @@ export default function SetupPage() {
 
   const openGroupDialog = (group: ProductGroup) => {
     setEditingGroup(group)
-    setEditingProductIds(group.productIds || [])
+    const ids = group.productIds || []
+    setEditingProductIds(ids)
+    const quantities: Record<string, string> = {}
+    ids.forEach((id) => {
+      const existing = group.productQuantities?.[id]
+      quantities[id] = existing && existing > 0 ? String(existing) : "1"
+    })
+    setEditingProductQuantities(quantities)
     setIsGroupDialogOpen(true)
   }
 
   const handleToggleProductInGroup = (productId: string) => {
-    setEditingProductIds((prev) =>
-      prev.includes(productId) ? prev.filter((id) => id !== productId) : [...prev, productId],
-    )
+    setEditingProductIds((prev) => {
+      const isSelected = prev.includes(productId)
+      const nextIds = isSelected ? prev.filter((id) => id !== productId) : [...prev, productId]
+
+      setEditingProductQuantities((prevQty) => {
+        const nextQty = { ...prevQty }
+        if (isSelected) {
+          delete nextQty[productId]
+        } else if (!nextQty[productId]) {
+          nextQty[productId] = "1"
+        }
+        return nextQty
+      })
+
+      return nextIds
+    })
+  }
+
+  const handleChangeProductQuantity = (productId: string, value: string) => {
+    setEditingProductQuantities((prev) => ({
+      ...prev,
+      [productId]: value,
+    }))
   }
 
   const handleSaveGroupProducts = async () => {
     if (!editingGroup) return
 
     try {
-      await updateProductGroup(editingGroup.id, { productIds: editingProductIds })
+      const quantities: Record<string, number> = {}
+      editingProductIds.forEach((id) => {
+        const raw = editingProductQuantities[id]
+        const num = Number.parseFloat(raw ?? "")
+        quantities[id] = Number.isFinite(num) && num > 0 ? num : 1
+      })
+
+      await updateProductGroup(editingGroup.id, {
+        productIds: editingProductIds,
+        productQuantities: quantities,
+      })
       toast({ title: "Success", description: "Product group updated." })
       setIsGroupDialogOpen(false)
       setEditingGroup(null)
       setEditingProductIds([])
+      setEditingProductQuantities({})
     } catch (e: any) {
       toast({ variant: "destructive", title: "Error", description: e?.message || "Failed to update product group." })
     }
@@ -381,6 +420,7 @@ export default function SetupPage() {
                               setIsGroupDialogOpen(false)
                               setEditingGroup(null)
                               setEditingProductIds([])
+                              setEditingProductQuantities({})
                             }
                           }}>
                             <DialogTrigger asChild>
@@ -407,6 +447,7 @@ export default function SetupPage() {
                                         <TableHead className="w-[40px]"></TableHead>
                                         <TableHead>Product</TableHead>
                                         <TableHead>SKU</TableHead>
+                                        <TableHead className="w-32">Default Qty</TableHead>
                                       </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -420,6 +461,16 @@ export default function SetupPage() {
                                           </TableCell>
                                           <TableCell className="font-medium">{product.name}</TableCell>
                                           <TableCell>{product.sku}</TableCell>
+                                          <TableCell>
+                                            <Input
+                                              type="number"
+                                              step="0.0001"
+                                              min="0"
+                                              value={editingProductQuantities[product.id] ?? "1"}
+                                              onChange={(e) => handleChangeProductQuantity(product.id, e.target.value)}
+                                              disabled={!editingProductIds.includes(product.id)}
+                                            />
+                                          </TableCell>
                                         </TableRow>
                                       ))}
                                     </TableBody>
@@ -431,6 +482,7 @@ export default function SetupPage() {
                                   setIsGroupDialogOpen(false)
                                   setEditingGroup(null)
                                   setEditingProductIds([])
+                                  setEditingProductQuantities({})
                                 }}>
                                   Cancel
                                 </Button>

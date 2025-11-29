@@ -136,6 +136,56 @@ export function AppSidebar() {
             <span className="font-bold text-lg">StockPilot</span>
           </Link>
         </div>
+
+        {/* My Account section moved near top */}
+        <div className="px-4 pb-2">
+          {user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="w-full justify-start items-center gap-2 px-2 py-2">
+                  <Avatar className="h-9 w-9">
+                    <AvatarFallback>{initials(user.displayName, user.email)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col items-start">
+                    <span className="text-sm font-medium leading-tight">
+                      {user.displayName || "User"}
+                    </span>
+                    <span className="text-xs text-muted-foreground leading-tight">
+                      {user.email}
+                    </span>
+                  </div>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56" align="start" forceMount>
+                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => router.push("/auth/login")}>
+                  Switch accounts
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Log out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <div className="flex gap-2 w-full">
+              <Button asChild variant="outline" className="flex-1 bg-transparent">
+                <Link href="/auth/login">
+                  <LogIn className="mr-2 h-4 w-4" />
+                  Login
+                </Link>
+              </Button>
+              <Button asChild className="flex-1">
+                <Link href="/auth/signup">
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Sign up
+                </Link>
+              </Button>
+            </div>
+          )}
+        </div>
         <nav className="flex-1 px-2 py-4 space-y-1">
           {getVisibleNavItems().map((item) =>
             item.isMenu && item.items ? (
@@ -184,48 +234,6 @@ export function AppSidebar() {
             ),
           )}
         </nav>
-        <div className="p-2 border-t">
-          {user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="w-full justify-start items-center gap-2 text-left">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>{initials(user.displayName, user.email)}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col items-start">
-                    <span className="text-sm font-medium">{user.displayName || "User"}</span>
-                    <span className="text-xs text-muted-foreground">{user.email}</span>
-                  </div>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end" forceMount>
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push("/auth/login")}>Switch accounts</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Log out</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <div className="flex gap-2">
-              <Button asChild variant="outline" className="flex-1 bg-transparent">
-                <Link href="/auth/login">
-                  <LogIn className="mr-2 h-4 w-4" />
-                  Login
-                </Link>
-              </Button>
-              <Button asChild className="flex-1">
-                <Link href="/auth/signup">
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Sign up
-                </Link>
-              </Button>
-            </div>
-          )}
-        </div>
       </aside>
 
       {/* Mobile hamburger */}
@@ -263,6 +271,56 @@ export function AppSidebar() {
                 </div>
                 <SheetTitle className="text-lg font-bold">StockPilot</SheetTitle>
               </div>
+
+              {/* My Account in mobile sheet header */}
+              {user ? (
+                <div className="mt-4">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" className="w-full justify-start items-center gap-2 px-2 py-2">
+                        <Avatar className="h-9 w-9">
+                          <AvatarFallback>{initials(user.displayName, user.email)}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex flex-col items-start">
+                          <span className="text-sm font-medium leading-tight">
+                            {user.displayName || "User"}
+                          </span>
+                          <span className="text-xs text-muted-foreground leading-tight">
+                            {user.email}
+                          </span>
+                        </div>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-56" align="start" forceMount>
+                      <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => router.push("/auth/login")}>
+                        Switch accounts
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleLogout}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        <span>Log out</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              ) : (
+                <div className="mt-4 flex gap-2">
+                  <Button asChild variant="outline" className="flex-1 bg-transparent">
+                    <Link href="/auth/login">
+                      <LogIn className="mr-2 h-4 w-4" />
+                      Login
+                    </Link>
+                  </Button>
+                  <Button asChild className="flex-1">
+                    <Link href="/auth/signup">
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      Sign up
+                    </Link>
+                  </Button>
+                </div>
+              )}
             </SheetHeader>
 
             <nav className="px-2 py-4 space-y-1">
