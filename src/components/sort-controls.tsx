@@ -79,8 +79,11 @@ export function sortArray<T>(
   if (direction === "none") return array;
   
   return [...array].sort((a, b) => {
-    const aKey = getKey(a).toLowerCase();
-    const bKey = getKey(b).toLowerCase();
+    // Normalize keys for reliable A–Z sorting
+    const rawA = getKey(a) ?? "";
+    const rawB = getKey(b) ?? "";
+    const aKey = rawA.toString().trim().toLowerCase();
+    const bKey = rawB.toString().trim().toLowerCase();
     
     if (direction === "asc") {
       return aKey.localeCompare(bKey);

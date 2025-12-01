@@ -93,7 +93,8 @@ export default function ProductionReportsPage() {
         (Number(s?.Testing?.rejected) || 0)
 
       const producedUnits = getFinalOutputForBatch(b)
-      const plannedUnits = b.totalMaterialQuantity || 0
+      // Planned Units should represent planned finished product units, not raw material quantity
+      const plannedUnits = b.quantityToBuild || 0
       const rawMaterialWastage = calculateRawMaterialWastage(b)
 
       return {

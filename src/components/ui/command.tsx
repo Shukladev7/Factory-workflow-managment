@@ -59,10 +59,20 @@ CommandInput.displayName = CommandPrimitive.Input.displayName
 const CommandList = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.List>
->(({ className, ...props }, ref) => (
+>(({ className, onWheel, onTouchMove, ...props }, ref) => (
   <CommandPrimitive.List
     ref={ref}
     className={cn("max-h-[300px] overflow-y-auto overflow-x-hidden", className)}
+    onWheel={(event) => {
+      // Prevent parent scroll containers (e.g. dialogs) from hijacking the wheel
+      event.stopPropagation()
+      onWheel?.(event)
+    }}
+    onTouchMove={(event) => {
+      // Ensure touch scrolling stays within the list on touch devices
+      event.stopPropagation()
+      onTouchMove?.(event)
+    }}
     {...props}
   />
 ))

@@ -205,7 +205,8 @@ export default function BatchesOverviewPage() {
       )
     )
     
-    return sortArray(filtered, sortDirection, (batch) => batch.id)
+    // Sort alphabetically by product name (fallback to batch id if missing)
+    return sortArray(filtered, sortDirection, (batch) => batch.productName || batch.id)
   }, [batches, searchQuery, sortDirection])
 
   if (!isClient) {
@@ -227,7 +228,7 @@ export default function BatchesOverviewPage() {
                 <PlusCircle className="mr-2 h-4 w-4" /> Create New Batch
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-[1000px] w-[95vw] max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Create New Batch</DialogTitle>
                 <DialogDescription>

@@ -126,7 +126,37 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
   const selectedProductId = form.watch("productId");
   const quantityToBuild = form.watch("quantityToBuild") || 1;
 
+  // Derive allowed stages from the selected product's manufacturing stages.
+  // If the product has defined manufacturing stages, only those should be selectable
+  // when creating a batch for that product. Otherwise, all stages remain available.
+  const selectedProduct = finalStock.find((p) => p.id === selectedProductId);
+  const allowedStages: ProcessingStageName[] =
+    selectedProduct &&
+    Array.isArray(selectedProduct.manufacturingStages) &&
+    selectedProduct.manufacturingStages.length > 0
+      ? selectedProduct.manufacturingStages
+      : [...processingStages];
+
   // Note: Removed auto-fill of manufacturing stages - users must manually select processes
+
+   // Ensure selected processes are always compatible with the selected product's stages
+   useEffect(() => {
+    if (!selectedProductId) return;
+
+    const product = finalStock.find((p) => p.id === selectedProductId);
+    const productStages = product?.manufacturingStages || [];
+
+    if (productStages.length === 0) return;
+
+    const currentProcesses = form.getValues("selectedProcesses");
+    const filteredProcesses = currentProcesses.filter((stage) =>
+      productStages.includes(stage),
+    );
+
+    if (filteredProcesses.length !== currentProcesses.length) {
+      form.setValue("selectedProcesses", filteredProcesses);
+    }
+  }, [selectedProductId, finalStock, form]);
 
   // Auto-load BOM when product or processes are selected
   useEffect(() => {
@@ -445,12 +475,13 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                         const hasOtherProcesses = field.value?.some(
                           (p) => p !== "Molding",
                         );
+                        const isAllowed = allowedStages.includes("Molding");
                         return (
                           <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                             <FormControl>
                               <Checkbox
                                 checked={hasMoulding}
-                                disabled={hasOtherProcesses}
+                                disabled={hasOtherProcesses || !isAllowed}
                                 onCheckedChange={(checked) => {
                                   if (checked) {
                                     field.onChange(["Molding"]);
@@ -482,12 +513,13 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                         const hasOtherProcesses = field.value?.some(
                           (p) => p !== "Machining",
                         );
+                        const isAllowed = allowedStages.includes("Machining");
                         return (
                           <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                             <FormControl>
                               <Checkbox
                                 checked={hasMachining}
-                                disabled={hasOtherProcesses}
+                                disabled={hasOtherProcesses || !isAllowed}
                                 onCheckedChange={(checked) => {
                                   if (checked) {
                                     field.onChange(["Machining"]);
@@ -533,6 +565,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                             field.value?.includes("Molding") ||
                             field.value?.includes("Machining");
                           const isChecked = field.value?.includes(process);
+                          const isAllowed = allowedStages.includes(process);
                           return (
                             <FormItem
                               key={process}
@@ -541,7 +574,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                               <FormControl>
                                 <Checkbox
                                   checked={isChecked}
-                                  disabled={hasSingleSelect}
+                                  disabled={hasSingleSelect || !isAllowed}
                                   onCheckedChange={(checked) => {
                                     const otherMultiProcesses =
                                       field.value?.filter(

@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React, { useEffect } from "react"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
 import { StockNotifier } from "@/components/stock-notifier"
@@ -18,15 +18,33 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         children
       ) : (
         <>
-          <div className="flex min-h-screen">
+          <div className="flex h-screen overflow-hidden">
             <AppSidebar />
-            <main className="flex-1 p-4 pt-20 md:pt-6 lg:p-8 lg:pt-8">{children}</main>
+            <main className="flex-1 p-4 pt-20 md:pt-16 lg:p-8 lg:pt-16 overflow-y-auto">
+              {children}
+            </main>
           </div>
           <StockNotifier />
         </>
       )}
     </AuthGate>
   )
+}
+
+function ServiceWorkerRegister() {
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
+      return
+    }
+
+    navigator.serviceWorker
+      .register("/service-worker.js")
+      .catch((error) => {
+        console.error("Service worker registration failed", error)
+      })
+  }, [])
+
+  return null
 }
 
 export default function RootLayout({
@@ -39,6 +57,11 @@ export default function RootLayout({
       <head>
         <title>StockPilot</title>
         <meta name="description" content="Inventory management for your production plant." />
+        <meta name="theme-color" content="#0f172a" />
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
@@ -51,6 +74,7 @@ export default function RootLayout({
       <body className="font-body antialiased min-h-screen bg-background">
         <LayoutContent>{children}</LayoutContent>
         <Toaster />
+        <ServiceWorkerRegister />
       </body>
     </html>
   )

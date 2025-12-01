@@ -21,16 +21,19 @@ import {
 } from "@/components/ui/popover"
 
 interface ComboboxProps {
-    options: { label: string; value: string }[];
-    value: string;
-    onChange: (value: string) => void;
-    placeholder?: string;
-    searchPlaceholder?: string;
-    notfoundPlaceholder?: string;
+  options: { label: string; value: string }[];
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  notfoundPlaceholder?: string;
 }
 
 export function Combobox({ options, value, onChange, placeholder, searchPlaceholder, notfoundPlaceholder }: ComboboxProps) {
   const [open, setOpen] = React.useState(false)
+
+  const selectedOption = options.find((option) => option.value === value)
+  const displayLabel = selectedOption?.label
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -41,13 +44,14 @@ export function Combobox({ options, value, onChange, placeholder, searchPlacehol
           aria-expanded={open}
           className="w-full justify-between"
         >
-          {value
-            ? options.find((option) => option.value === value)?.label
-            : placeholder || "Select option..."}
+          {displayLabel || placeholder || "Select option..."}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-full p-0" style={{ width: 'var(--radix-popover-trigger-width)' }}>
+      <PopoverContent
+        className="w-full p-0"
+        style={{ width: 'var(--radix-popover-trigger-width)' }}
+      >
         <Command>
           <CommandInput placeholder={searchPlaceholder || "Search..."} />
           <CommandList>
@@ -56,9 +60,12 @@ export function Combobox({ options, value, onChange, placeholder, searchPlacehol
               {options.map((option) => (
                 <CommandItem
                   key={option.value}
-                  value={option.value}
+                  value={option.label}
                   onSelect={(currentValue) => {
-                    onChange(currentValue === value ? "" : currentValue)
+                    const selected = options.find(
+                      (opt) => opt.label === currentValue,
+                    )
+                    onChange(selected ? selected.value : "")
                     setOpen(false)
                   }}
                 >

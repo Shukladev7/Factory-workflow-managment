@@ -50,6 +50,7 @@ export function AppSidebar() {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const { canView, loading: permissionsLoading, employee } = usePermissions()
+  const [isCollapsed, setIsCollapsed] = useState(false)
 
   useEffect(() => {
     const auth = getFirebaseAuth()
@@ -110,8 +111,27 @@ export function AppSidebar() {
 
   return (
     <>
+      {/* Desktop sidebar toggle */}
+      <div className="hidden md:block">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="fixed top-4 left-4 z-40 h-14 w-14 rounded-full bg-background shadow"
+          aria-label={isCollapsed ? "Show sidebar" : "Hide sidebar"}
+          onClick={() => setIsCollapsed((prev) => !prev)}
+        >
+          <Menu className="h-4 w-4" />
+        </Button>
+      </div>
+      
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex h-full w-64 flex-shrink-0 border-r bg-card flex flex-col">
+      <aside
+        className={cn(
+          "hidden md:flex h-full flex-shrink-0 border-r bg-card flex flex-col transition-all duration-300",
+          isCollapsed ? "w-0 opacity-0 pointer-events-none" : "w-64",
+        )}
+      >
         {/* Company Logo */}
         <div className="p-4 border-b">
           <div className="flex items-center justify-center">
@@ -137,103 +157,112 @@ export function AppSidebar() {
           </Link>
         </div>
 
-        {/* My Account section moved near top */}
-        <div className="px-4 pb-2">
-          {user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="w-full justify-start items-center gap-2 px-2 py-2">
-                  <Avatar className="h-9 w-9">
-                    <AvatarFallback>{initials(user.displayName, user.email)}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col items-start">
-                    <span className="text-sm font-medium leading-tight">
-                      {user.displayName || "User"}
-                    </span>
-                    <span className="text-xs text-muted-foreground leading-tight">
-                      {user.email}
-                    </span>
-                  </div>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="start" forceMount>
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push("/auth/login")}>
-                  Switch accounts
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Log out</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <div className="flex gap-2 w-full">
-              <Button asChild variant="outline" className="flex-1 bg-transparent">
-                <Link href="/auth/login">
-                  <LogIn className="mr-2 h-4 w-4" />
-                  Login
+        <div className="flex-1 flex flex-col">
+          <nav className="flex-1 px-3 py-4 space-y-2">
+            {getVisibleNavItems().map((item) =>
+              item.isMenu && item.items ? (
+                <Accordion
+                  key={item.label}
+                  type="single"
+                  collapsible
+                  defaultValue={pathname.startsWith(item.basePath!) ? item.basePath : undefined}
+                >
+                  <AccordionItem value={item.basePath!} className="border-b-0">
+                    <AccordionTrigger
+                      className={cn(
+                        "flex items-center w-full text-left rounded-lg px-4 py-3 text-lg font-semibold hover:bg-muted/80",
+                        pathname.startsWith(item.basePath!)
+                          ? "bg-primary/10 text-primary border-l-4 border-primary"
+                          : "text-foreground",
+                      )}
+                    >
+                      {item.label}
+                    </AccordionTrigger>
+                    <AccordionContent className="pl-4 pb-0">
+                      {item.items.map((subItem) => (
+                        <Link
+                          key={subItem.href}
+                          href={subItem.href}
+                          className={cn(
+                            "block rounded-lg px-4 py-2.5 text-base font-medium hover:bg-muted/80",
+                            pathname === subItem.href
+                              ? "bg-primary/10 text-primary border-l-4 border-primary"
+                              : "text-foreground",
+                          )}
+                        >
+                          {subItem.label}
+                        </Link>
+                      ))}
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              ) : (
+                <Link
+                  key={item.href}
+                  href={item.href!}
+                  className={cn(
+                    "block rounded-lg px-4 py-3 text-lg font-semibold hover:bg-muted/80",
+                    pathname === item.href
+                      ? "bg-primary/10 text-primary border-l-4 border-primary"
+                      : "text-foreground",
+                  )}
+                >
+                  {item.label}
                 </Link>
-              </Button>
-              <Button asChild className="flex-1">
-                <Link href="/auth/signup">
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Sign up
-                </Link>
-              </Button>
-            </div>
-          )}
-        </div>
-        <nav className="flex-1 px-2 py-4 space-y-1">
-          {getVisibleNavItems().map((item) =>
-            item.isMenu && item.items ? (
-              <Accordion
-                key={item.label}
-                type="single"
-                collapsible
-                defaultValue={pathname.startsWith(item.basePath!) ? item.basePath : undefined}
-              >
-                <AccordionItem value={item.basePath!} className="border-b-0">
-                  <AccordionTrigger
-                    className={cn(
-                      "flex items-center w-full text-left rounded-md p-2 text-sm font-medium hover:bg-muted",
-                      pathname.startsWith(item.basePath!) ? "text-primary" : "text-foreground",
-                    )}
-                  >
-                    {item.label}
-                  </AccordionTrigger>
-                  <AccordionContent className="pl-4 pb-0">
-                    {item.items.map((subItem) => (
-                      <Link
-                        key={subItem.href}
-                        href={subItem.href}
-                        className={cn(
-                          "block rounded-md p-2 text-sm font-medium hover:bg-muted",
-                          pathname === subItem.href ? "text-primary" : "text-foreground",
-                        )}
-                      >
-                        {subItem.label}
-                      </Link>
-                    ))}
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
+              ),
+            )}
+          </nav>
+
+          {/* My Account section moved near top */}
+          <div className="px-4 pb-2 border-t pt-3">
+            {user ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="w-full justify-start items-center gap-2 px-2 py-2">
+                    <Avatar className="h-9 w-9">
+                      <AvatarFallback>{initials(user.displayName, user.email)}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col items-start">
+                      <span className="text-sm font-medium leading-tight">
+                        {user.displayName || "User"}
+                      </span>
+                      <span className="text-xs text-muted-foreground leading-tight">
+                        {user.email}
+                      </span>
+                    </div>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56" align="start" forceMount>
+                  <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => router.push("/auth/login")}>
+                    Switch accounts
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Log out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
-              <Link
-                key={item.href}
-                href={item.href!}
-                className={cn(
-                  "block rounded-md p-2 text-sm font-medium hover:bg-muted",
-                  pathname === item.href ? "text-primary" : "text-foreground",
-                )}
-              >
-                {item.label}
-              </Link>
-            ),
-          )}
-        </nav>
+              <div className="flex gap-2 w-full">
+                <Button asChild variant="outline" className="flex-1 bg-transparent">
+                  <Link href="/auth/login">
+                    <LogIn className="mr-2 h-4 w-4" />
+                    Login
+                  </Link>
+                </Button>
+                <Button asChild className="flex-1">
+                  <Link href="/auth/signup">
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Sign up
+                  </Link>
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
       </aside>
 
       {/* Mobile hamburger */}
@@ -243,10 +272,10 @@ export function AppSidebar() {
             <Button
               variant="outline"
               size="icon"
-              className="fixed top-4 left-4 z-50 bg-transparent"
+              className="fixed top-5 left-5 z-50 h-14 w-14 rounded-full bg-background shadow-md border-2 border-primary/10"
               aria-label="Open menu"
             >
-              <Menu className="h-5 w-5" />
+              <Menu className="h-7 w-7" />
               <span className="sr-only">Open menu</span>
             </Button>
           </SheetTrigger>
