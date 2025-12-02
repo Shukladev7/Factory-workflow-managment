@@ -130,156 +130,156 @@ export function CreateProductForm({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <FormField
-            control={form.control}
-            name="productId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Product ID</FormLabel>
-                <FormControl>
-                  <Input placeholder="e.g., PROD-1001" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="name"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Product Name</FormLabel>
-                <FormControl>
-                  <Input placeholder="e.g., Model X Mainframe" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="sku"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>SKU</FormLabel>
-                <FormControl>
-                  <Input placeholder="e.g., MX-MF-001" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <FormField
-            control={form.control}
-            name="price"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Unit Price (excl. GST)</FormLabel>
-                <FormControl>
-                  <Input type="number" placeholder="0.00" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="gstRate"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>GST Rate (%)</FormLabel>
-                <FormControl>
-                  <Input type="number" placeholder="0" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="threshold"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Low Stock Threshold</FormLabel>
-                <FormControl>
-                  <Input type="number" placeholder="0" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-        <FormField
-          control={form.control}
-          name="imageUrl"
-          render={({ field }) => (
-            <FormItem>
-              <FormControl>
-                <ImageUpload
-                  value={field.value}
-                  onChange={field.onChange}
-                  folder="products"
-                  placeholder="Upload product image"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="hasManufacturingDetails"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center space-x-2 space-y-0 border-t pt-4">
-              <FormControl>
-                <Checkbox
-                  checked={field.value}
-                  onCheckedChange={(checked) => field.onChange(checked === true)}
-                />
-              </FormControl>
-              <FormLabel className="font-medium">
-                To be Manufactured
-              </FormLabel>
-            </FormItem>
-          )}
-        />
-
-        {hasManufacturingDetails && (
-          <>
-            {/* Manufacturing Stages Selector */}
-            <div className="border-t pt-6">
-              <ManufacturingStagesSelector
-                selectedStages={manufacturingStages}
-                onStagesChange={setManufacturingStages}
-              />
-            </div>
-
-            {/* BOM Editor */}
-            <div className="border-t pt-6">
-              <BOMEditor
-                bomRows={bomRows}
-                onBOMChange={setBomRows}
-                productName={form.watch("name")}
-                selectedStages={manufacturingStages}
-              />
-            </div>
-          </>
-        )}
-
-        {/* Form Errors */}
-        {form.formState.errors.root && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-800">{form.formState.errors.root.message}</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <FormField
+              control={form.control}
+              name="productId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Product ID</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g., PROD-1001" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Product Name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g., Model X Mainframe" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="sku"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>SKU</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g., MX-MF-001" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
-        )}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <FormField
+              control={form.control}
+              name="price"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Unit Price (excl. GST)</FormLabel>
+                  <FormControl>
+                    <Input type="number" placeholder="0.00" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="gstRate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>GST Rate (%)</FormLabel>
+                  <FormControl>
+                    <Input type="number" placeholder="0" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="threshold"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Low Stock Threshold</FormLabel>
+                  <FormControl>
+                    <Input type="number" placeholder="0" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+          <FormField
+            control={form.control}
+            name="imageUrl"
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <ImageUpload
+                    value={field.value}
+                    onChange={field.onChange}
+                    folder="products"
+                    placeholder="Upload product image"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-        <div className="flex justify-end">
-          <Button type="submit">Add Product</Button>
-        </div>
+          <FormField
+            control={form.control}
+            name="hasManufacturingDetails"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-center space-x-2 space-y-0 border-t pt-4">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={(checked) => field.onChange(checked === true)}
+                  />
+                </FormControl>
+                <FormLabel className="font-medium">
+                  To be Manufactured
+                </FormLabel>
+              </FormItem>
+            )}
+          />
+
+          {hasManufacturingDetails && (
+            <>
+              {/* Manufacturing Stages Selector */}
+              <div className="border-t pt-6">
+                <ManufacturingStagesSelector
+                  selectedStages={manufacturingStages}
+                  onStagesChange={setManufacturingStages}
+                />
+              </div>
+
+              {/* BOM Editor */}
+              <div className="border-t pt-6">
+                <BOMEditor
+                  bomRows={bomRows}
+                  onBOMChange={setBomRows}
+                  productName={form.watch("name")}
+                  selectedStages={manufacturingStages}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Form Errors */}
+          {form.formState.errors.root && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-800">{form.formState.errors.root.message}</p>
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <Button type="submit">Add Product</Button>
+          </div>
       </form>
     </Form>
   );

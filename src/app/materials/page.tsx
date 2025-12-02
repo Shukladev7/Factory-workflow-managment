@@ -30,7 +30,7 @@ import { LogAction } from "@/lib/types"
 import { SortControls, sortArray, type SortDirection } from "@/components/sort-controls"
 
 export default function MaterialsPage() {
-  const { rawMaterials, createRawMaterial, updateRawMaterial, deleteRawMaterial } = useRawMaterials()
+  const { regularMaterials, createRawMaterial, updateRawMaterial, deleteRawMaterial } = useRawMaterials()
   const { activityLog, createActivityLog } = useActivityLog()
   const { canEdit } = usePermissions()
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false)
@@ -112,7 +112,7 @@ export default function MaterialsPage() {
 
   const handleMaterialUpdated = async (updatedMaterial: RawMaterial) => {
     try {
-      const oldMaterial = rawMaterials.find((m) => m.id === updatedMaterial.id)
+      const oldMaterial = regularMaterials.find((m) => m.id === updatedMaterial.id)
       if (!oldMaterial) return
 
       let details = `Material "${updatedMaterial.name}" was updated.`
@@ -196,7 +196,7 @@ export default function MaterialsPage() {
 
   const handleMaterialDeleted = async (materialId: string) => {
     try {
-      const materialToDelete = rawMaterials.find((m) => m.id === materialId)
+      const materialToDelete = regularMaterials.find((m) => m.id === materialId)
       if (!materialToDelete) return
       
       await deleteRawMaterial(materialId)
@@ -226,7 +226,7 @@ export default function MaterialsPage() {
   }
 
   const handleExport = () => {
-    const worksheet = XLSX.utils.json_to_sheet(rawMaterials)
+    const worksheet = XLSX.utils.json_to_sheet(regularMaterials)
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, "Raw Materials")
     XLSX.writeFile(workbook, "raw_materials.xlsx")
@@ -304,7 +304,7 @@ export default function MaterialsPage() {
   }
 
   const filteredAndSortedMaterials = useMemo(() => {
-    const filtered = rawMaterials.filter((material) => {
+    const filtered = regularMaterials.filter((material) => {
       const query = searchQuery.toLowerCase()
       return (
         material.name.toLowerCase().includes(query) ||
@@ -314,7 +314,7 @@ export default function MaterialsPage() {
     })
 
     return sortArray(filtered, sortDirection, (material) => material.name)
-  }, [rawMaterials, searchQuery, sortDirection])
+  }, [regularMaterials, searchQuery, sortDirection])
 
   if (!isClient) {
     return null

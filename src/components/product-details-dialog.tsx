@@ -185,7 +185,7 @@ export function ProductDetailsDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[1000px]">
         <DialogHeader>
           <DialogTitle>
             {isEditing
@@ -200,19 +200,17 @@ export function ProductDetailsDialog({
         </DialogHeader>
 
         {isEditing ? (
-          <div className="py-4">
-            {groupedProduct.productTemplate ? (
-              <EditProductForm
-                product={groupedProduct.productTemplate}
-                onProductUpdated={handleUpdate}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground py-4">
-                Cannot edit - no product template exists. Only batch entries
-                available.
-              </p>
-            )}
-          </div>
+          groupedProduct.productTemplate ? (
+            <EditProductForm
+              product={groupedProduct.productTemplate}
+              onProductUpdated={handleUpdate}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground py-4">
+              Cannot edit - no product template exists. Only batch entries
+              available.
+            </p>
+          )
         ) : (
           <Tabs defaultValue="details" className="pt-4">
             <TabsList>

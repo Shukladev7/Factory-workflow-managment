@@ -37,6 +37,8 @@ export interface FinalStock {
   imageUrl: string;
   imageHint: string;
   manufacturingStages: ProcessingStageName[]; // Selected manufacturing stages for this product
+  mouldedMaterialId?: string;
+  machinedMaterialId?: string;
   bom_per_piece?: BOMRow[];
   batches?: BatchEntry[]; // Array of batch entries for this product
   quantity?: number; // Accepted quantity from the last completed stage

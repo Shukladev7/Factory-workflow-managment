@@ -218,8 +218,8 @@ export default function StorePage() {
                     <p className="text-muted-foreground">
                       {title === "Moulded Materials" 
                         ? "No moulded materials in store yet. Complete a moulding batch to see items here."
-                        : title === "Finished Materials"
-                        ? "No finished materials in store yet. Complete a finishing-only batch to see items here."
+                        : title === "Machined Materials"
+                        ? "No machined materials in store yet. Complete a machining-only batch to see items here."
                         : "No materials available."}
                     </p>
                   </div>

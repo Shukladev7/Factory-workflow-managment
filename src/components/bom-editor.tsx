@@ -23,7 +23,7 @@ interface BOMEditorProps {
 const processingStages: ProcessingStageName[] = ["Molding", "Machining", "Assembling", "Testing"]
 
 export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMultiplier = 1, productName = "", selectedStages = [] }: BOMEditorProps) {
-  const { rawMaterials, regularMaterials, mouldedMaterials, finishedMaterials } = useRawMaterials()
+  const { rawMaterials, regularMaterials, mouldedMaterials, finishedMaterials, createRawMaterial } = useRawMaterials()
   const [mouldedUnitRequired, setMouldedUnitRequired] = useState(false)
   const [machinedUnitRequired, setMachinedUnitRequired] = useState(false)
   const isProcessingRef = useRef(false)
@@ -34,7 +34,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
 
   // Find actual material IDs if they exist in inventory
   const mouldedUnitItem = mouldedMaterials.find(m => m.name === `Moulded ${productName}`)
-  const machinedUnitItem = finishedMaterials.find(m => m.name === `Finished ${productName}`)
+  const machinedUnitItem = finishedMaterials.find(m => m.name === `Machined ${productName}`)
 
   // Derive checkbox states from bomRows without causing re-renders
   const hasMouldedUnit = bomRows.some(
@@ -48,22 +48,22 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
 
   const hasMachinedUnit = bomRows.some(
     row => {
-      // Check for placeholder ID or actual material ID
+      // Check for both placeholder and actual material ID
       if (row.raw_material_id === MACHINED_UNIT_ID) return true
       if (machinedUnitItem && row.raw_material_id === machinedUnitItem.id && row.stage === "Assembling") return true
       return false
     }
   )
 
-  // Initialize state only once on mount if BOM rows already exist
+  // Keep checkbox state in sync with BOM rows
   useEffect(() => {
-    if (hasMouldedUnit && !mouldedUnitRequired) {
-      setMouldedUnitRequired(true)
+    if (hasMouldedUnit !== mouldedUnitRequired) {
+      setMouldedUnitRequired(hasMouldedUnit)
     }
-    if (hasMachinedUnit && !machinedUnitRequired) {
-      setMachinedUnitRequired(true)
+    if (hasMachinedUnit !== machinedUnitRequired) {
+      setMachinedUnitRequired(hasMachinedUnit)
     }
-  }, []) // Empty dependency array - only run on mount
+  }, [hasMouldedUnit, hasMachinedUnit, mouldedUnitRequired, machinedUnitRequired])
 
   // Handle moulded unit checkbox change
   const handleMouldedUnitChange = async (checked: boolean) => {
@@ -81,16 +81,30 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
     )
 
     if (checked && !existingMouldedRow) {
-      // Use placeholder ID for new products, actual material ID for existing products
+      // Ensure a corresponding moulded material exists in Store
       isProcessingRef.current = true
-      let materialId = mouldedUnitItem?.id || MOULDED_UNIT_ID
+      let materialId = mouldedUnitItem?.id
       let materialUnit = mouldedUnitItem?.unit || "pcs"
 
-      // Don't create materials in store during product creation - use placeholder instead
-      // The actual material will be created when the first batch is processed
-      
+      if (!materialId && productName) {
+        try {
+          materialId = await createRawMaterial({
+            name: `Moulded ${productName}`,
+            sku: `M-${productName}`,
+            quantity: 0,
+            unit: materialUnit,
+            threshold: 0,
+            isMoulded: true,
+            isFinished: false,
+            createdAt: new Date().toISOString(),
+          })
+        } catch (error) {
+          console.error("[BOMEditor] Failed to create moulded material:", error)
+        }
+      }
+
       const newRow: BOMRow = {
-        raw_material_id: materialId,
+        raw_material_id: materialId || MOULDED_UNIT_ID,
         stage: "Machining",
         qty_per_piece: 1,
         unit: materialUnit,
@@ -129,16 +143,30 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
     )
 
     if (checked && !existingMachinedRow) {
-      // Use placeholder ID for new products, actual material ID for existing products
+      // Ensure a corresponding finished (machined) material exists in Store
       isProcessingRef.current = true
-      let materialId = machinedUnitItem?.id || MACHINED_UNIT_ID
+      let materialId = machinedUnitItem?.id
       let materialUnit = machinedUnitItem?.unit || "pcs"
 
-      // Don't create materials in store during product creation - use placeholder instead
-      // The actual material will be created when the first batch is processed
-      
+      if (!materialId && productName) {
+        try {
+          materialId = await createRawMaterial({
+            name: `Machined ${productName}`,
+            sku: `F-${productName}`,
+            quantity: 0,
+            unit: materialUnit,
+            threshold: 0,
+            isMoulded: false,
+            isFinished: true,
+            createdAt: new Date().toISOString(),
+          })
+        } catch (error) {
+          console.error("[BOMEditor] Failed to create finished material:", error)
+        }
+      }
+
       const newRow: BOMRow = {
-        raw_material_id: materialId,
+        raw_material_id: materialId || MACHINED_UNIT_ID,
         stage: "Assembling",
         qty_per_piece: 1,
         unit: materialUnit,
@@ -275,7 +303,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
               >
                 Machined unit required
-                <span className="text-muted-foreground"> (adds: Finished {productName} → Assembling stage, qty = 1)</span>
+                <span className="text-muted-foreground"> (adds: Machined {productName} → Assembling stage, qty = 1)</span>
               </label>
             </div>
           </div>

@@ -858,6 +858,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                               <Select
                                 onValueChange={field.onChange}
                                 defaultValue={field.value}
+                                disabled
                               >
                                 <FormControl>
                                   <SelectTrigger>
@@ -891,6 +892,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                                   type="number"
                                   placeholder="0"
                                   {...field}
+                                  disabled
                                 />
                               </FormControl>
                               <FormMessage />
@@ -926,7 +928,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
               </Button>
             </div>
 
-            {/* Moulded Items Section */}
+            {/* Moulded Items Section - Auto-filled and locked */}
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <FormLabel className="text-base font-semibold">
@@ -963,6 +965,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                               <Select
                                 onValueChange={field.onChange}
                                 defaultValue={field.value}
+                                disabled
                               >
                                 <FormControl>
                                   <SelectTrigger>
@@ -1002,6 +1005,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                               <Select
                                 onValueChange={field.onChange}
                                 defaultValue={field.value}
+                                disabled
                               >
                                 <FormControl>
                                   <SelectTrigger>
@@ -1035,6 +1039,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                                   type="number"
                                   placeholder="0"
                                   {...field}
+                                  disabled
                                 />
                               </FormControl>
                               <FormMessage />
@@ -1042,47 +1047,27 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                           )}
                         />
                       </div>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="icon"
-                        onClick={() => remove(index)}
-                        className="flex-shrink-0"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex-shrink-0 h-10" />
                     </div>
                   );
                 })}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  append({
-                    materialId: "",
-                    quantity: 1,
-                    stage: selectedProcesses[0] || "Machining",
-                    materialType: "moulded",
-                  })
-                }
-              >
-                <PlusCircle className="mr-2 h-4 w-4" /> Add Moulded Item
-              </Button>
+              {/* No manual add button - moulded items are fully auto-managed */}
             </div>
 
-            {/* Finished Items Section - Only show when Assembling/Testing is selected without Machining */}
+            {/* Machined Items Section - Auto-filled and locked
+                Only show when Assembling/Testing is selected without Machining */}
             {(selectedProcesses.includes("Assembling") ||
               selectedProcesses.includes("Testing")) &&
               !selectedProcesses.includes("Machining") && (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
                     <FormLabel className="text-base font-semibold">
-                      Finished Items from Store
+                      Machined Items from Store
                     </FormLabel>
                     <Badge variant="secondary">Optional</Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Select finished products from the Store
+                    Select machined products from the Store
                   </p>
                   {fields
                     .filter(
@@ -1112,6 +1097,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                                   <Select
                                     onValueChange={field.onChange}
                                     defaultValue={field.value}
+                                    disabled
                                   >
                                     <FormControl>
                                       <SelectTrigger>
@@ -1151,6 +1137,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                                   <Select
                                     onValueChange={field.onChange}
                                     defaultValue={field.value}
+                                    disabled
                                   >
                                     <FormControl>
                                       <SelectTrigger>
@@ -1184,6 +1171,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                                       type="number"
                                       placeholder="0"
                                       {...field}
+                                      disabled
                                     />
                                   </FormControl>
                                   <FormMessage />
@@ -1191,32 +1179,11 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                               )}
                             />
                           </div>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="icon"
-                            onClick={() => remove(index)}
-                            className="flex-shrink-0"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex-shrink-0 h-10" />
                         </div>
                       );
                     })}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      append({
-                        materialId: "",
-                        quantity: 1,
-                        stage: selectedProcesses[0] || "Assembling",
-                        materialType: "finished",
-                      })
-                    }
-                  >
-                    <PlusCircle className="mr-2 h-4 w-4" /> Add Finished Item
-                  </Button>
+                  {/* No manual add button - finished items are fully auto-managed */}
                 </div>
               )}
           </>

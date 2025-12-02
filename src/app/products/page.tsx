@@ -42,6 +42,7 @@ import { ProductDetailsDialog } from "@/components/product-details-dialog";
 import { Badge } from "@/components/ui/badge";
 import { RestockModal } from "@/components/restock-modal";
 import { SortControls, sortArray, type SortDirection } from "@/components/sort-controls";
+import { addRawMaterial } from "@/lib/firebase/firestore-operations";
 
 // Grouped product interface
 interface GroupedProduct {
@@ -52,6 +53,87 @@ interface GroupedProduct {
   }>;
   firstEntry: FinalStock; // Use first entry for image and SKU display
   productTemplate: FinalStock | null; // The main product template (if exists)
+}
+
+const MOULDED_UNIT_ID = "__MOULDED_UNIT__";
+const MACHINED_UNIT_ID = "__MACHINED_UNIT__";
+
+async function buildLinkedUnitUpdatesForProduct(
+  product: FinalStock,
+): Promise<Partial<FinalStock>> {
+  if (!product.bom_per_piece || product.bom_per_piece.length === 0) {
+    return {};
+  }
+
+  const updatedBom = product.bom_per_piece.map((row) => ({ ...row }));
+  let mouldedMaterialId = product.mouldedMaterialId;
+  let machinedMaterialId = product.machinedMaterialId;
+  let bomChanged = false;
+  const now = new Date().toISOString();
+
+  const hasMouldedPlaceholder = updatedBom.some(
+    (row) => row.raw_material_id === MOULDED_UNIT_ID,
+  );
+  if (hasMouldedPlaceholder) {
+    if (!mouldedMaterialId) {
+      mouldedMaterialId = await addRawMaterial({
+        name: `Moulded ${product.name}`,
+        sku: `M-${product.sku}`,
+        quantity: 0,
+        unit: "pcs",
+        threshold: 0,
+        isMoulded: true,
+        isFinished: false,
+        createdAt: now,
+      });
+    }
+
+    updatedBom.forEach((row) => {
+      if (row.raw_material_id === MOULDED_UNIT_ID) {
+        row.raw_material_id = mouldedMaterialId as string;
+        bomChanged = true;
+      }
+    });
+  }
+
+  const hasMachinedPlaceholder = updatedBom.some(
+    (row) => row.raw_material_id === MACHINED_UNIT_ID,
+  );
+  if (hasMachinedPlaceholder) {
+    if (!machinedMaterialId) {
+      machinedMaterialId = await addRawMaterial({
+        name: `Machined ${product.name}`,
+        sku: `F-${product.sku}`,
+        quantity: 0,
+        unit: "pcs",
+        threshold: 0,
+        isMoulded: false,
+        isFinished: true,
+        createdAt: now,
+      });
+    }
+
+    updatedBom.forEach((row) => {
+      if (row.raw_material_id === MACHINED_UNIT_ID) {
+        row.raw_material_id = machinedMaterialId as string;
+        bomChanged = true;
+      }
+    });
+  }
+
+  const updates: Partial<FinalStock> = {};
+
+  if (bomChanged) {
+    updates.bom_per_piece = updatedBom;
+  }
+  if (mouldedMaterialId && mouldedMaterialId !== product.mouldedMaterialId) {
+    updates.mouldedMaterialId = mouldedMaterialId;
+  }
+  if (machinedMaterialId && machinedMaterialId !== product.machinedMaterialId) {
+    updates.machinedMaterialId = machinedMaterialId;
+  }
+
+  return updates;
 }
 
 export default function ProductsPage() {
@@ -135,6 +217,15 @@ export default function ProductsPage() {
       const productId = await createFinalStock(productData);
       console.log("[ProductsPage] ✓ Product created with ID:", productId);
 
+      // After product is created, create/link moulded & machined materials if required
+      const linkedUpdates = await buildLinkedUnitUpdatesForProduct({
+        ...newProduct,
+        id: productId,
+      });
+      if (Object.keys(linkedUpdates).length > 0) {
+        await updateFinalStock(productId, linkedUpdates);
+      }
+
       await createActivityLog({
         recordId: productId,
         recordType: "FinalStock",
@@ -165,11 +256,16 @@ export default function ProductsPage() {
     }
   };
 
-  const handleProductUpdated = (updatedProduct: FinalStock) => {
+  const handleProductUpdated = async (updatedProduct: FinalStock) => {
     // Remove id field from updates as it shouldn't be stored as a document field
-    const { id, ...updates } = updatedProduct;
-    updateFinalStock(id, updates);
-    createActivityLog({
+    const { id, ...baseUpdates } = updatedProduct;
+
+    // Ensure linked moulded/machined materials exist and BOM references use real IDs
+    const linkedUpdates = await buildLinkedUnitUpdatesForProduct(updatedProduct);
+    const finalUpdates = { ...baseUpdates, ...linkedUpdates };
+
+    await updateFinalStock(id, finalUpdates);
+    await createActivityLog({
       recordId: id,
       recordType: "FinalStock",
       action: "Updated",
@@ -515,14 +611,18 @@ export default function ProductsPage() {
                 <PlusCircle className="mr-2 h-4 w-4" /> Add Product
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[600px] max-h-[700px] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Add New Product</DialogTitle>
-                <DialogDescription>
-                  Enter the details for the new finished product.
-                </DialogDescription>
-              </DialogHeader>
-              <CreateProductForm onProductCreated={handleProductCreated} />
+            <DialogContent className="sm:max-w-[900px] overflow-y-hidden">
+              <div className="flex max-h-[85vh] flex-col">
+                <DialogHeader className="shrink-0">
+                  <DialogTitle>Add New Product</DialogTitle>
+                  <DialogDescription>
+                    Enter the details for the new finished product.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="mt-4 flex-1 overflow-y-auto pr-2 pb-2">
+                  <CreateProductForm onProductCreated={handleProductCreated} />
+                </div>
+              </div>
             </DialogContent>
           </Dialog>
         )}

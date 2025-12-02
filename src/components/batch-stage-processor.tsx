@@ -330,7 +330,7 @@ export function BatchStageProcessor({
 
   const createFinishedMaterial = async (batch: Batch, accepted: number) => {
     const { addRawMaterial } = await import("@/lib/firebase/firestore-operations");
-    const materialName = `Finished ${batch.productName}`;
+    const materialName = `Machined ${batch.productName}`;
     const existingMaterial = rawMaterials.find(
       (m) => m.name === materialName && m.isFinished === true,
     );
@@ -346,12 +346,12 @@ export function BatchStageProcessor({
         recordId: existingMaterial.id,
         recordType: "RawMaterial",
         action: "Stock Adjustment (Batch)",
-        details: `${accepted} finished items from batch ${batch.id} added to Store. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
+        details: `${accepted} machined items from batch ${batch.id} added to Store. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
       });
 
       toast({
-        title: "Finished Material Updated",
-        description: `${accepted} finished ${batch.productName} added to existing stock.`,
+        title: "Machined Material Updated",
+        description: `${accepted} machined ${batch.productName} added to existing stock.`,
       });
     } else {
       const finishedMaterialId = await addRawMaterial({
@@ -369,12 +369,12 @@ export function BatchStageProcessor({
         recordId: finishedMaterialId,
         recordType: "RawMaterial",
         action: "Created",
-        details: `${accepted} finished items from batch ${batch.id} added to Store.`,
+        details: `${accepted} machined items from batch ${batch.id} added to Store.`,
       });
 
       toast({
-        title: "Finished Material Created",
-        description: `${accepted} finished ${batch.productName} added to Store.`,
+        title: "Machined Material Created",
+        description: `${accepted} machined ${batch.productName} added to Store.`,
       });
     }
   };
