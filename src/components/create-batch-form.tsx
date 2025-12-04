@@ -45,6 +45,9 @@ const processingStages = [
   "Testing",
 ] as const;
 
+const numberInputClassName =
+  "appearance-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
+
 const materialSchema = z.object({
   materialId: z.string().min(1, "Please select a material."),
   quantity: z.coerce.number().min(0, "Quantity must be greater than 0."),
@@ -431,7 +434,20 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
               <FormItem>
                 <FormLabel>Quantity to Build *</FormLabel>
                 <FormControl>
-                  <Input type="number" min="1" placeholder="1" {...field} />
+                  <Input
+                    type="number"
+                    min="1"
+                    placeholder="1"
+                    className={numberInputClassName}
+                    {...field}
+                    onChange={(e) => {
+                      const rawValue = e.target.value;
+                      // Coerce to positive integer (at least 1)
+                      let value = Math.max(1, Number(rawValue) || 0);
+                      e.target.value = value.toString();
+                      field.onChange(value);
+                    }}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -740,7 +756,18 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                               {selectedMaterial && `(${selectedMaterial.unit})`}
                             </FormLabel>
                             <FormControl>
-                              <Input type="number" placeholder="0" {...field} />
+                              <Input
+                                type="number"
+                                placeholder="0"
+                                className={numberInputClassName}
+                                {...field}
+                                onChange={(e) => {
+                                  const rawValue = e.target.value;
+                                  const value = Math.max(0, Number(rawValue) || 0);
+                                  e.target.value = value.toString();
+                                  field.onChange(value);
+                                }}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>

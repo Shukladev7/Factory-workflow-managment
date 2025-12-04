@@ -38,6 +38,14 @@ import {
 import { useRawMaterials } from "@/hooks/use-raw-materials";
 import { useFinalStock } from "@/hooks/use-final-stock";
 import { useActivityLog } from "@/hooks/use-activity-log";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 const formSchema = z.object({
   batches: z.array(
@@ -177,6 +185,19 @@ export function BatchStageProcessor({
 
     // For subsequent stages, use accepted from previous stage
     return getInputFromPreviousStage(batch);
+  };
+
+  const numberInputClassName =
+    "appearance-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
+
+  const getMaxAllowedAccepted = (batch: Batch): number => {
+    const stageInput = getTotalInput(batch);
+    const quantityLimit =
+      typeof batch.quantityToBuild === "number" && batch.quantityToBuild > 0
+        ? batch.quantityToBuild
+        : stageInput;
+
+    return Math.min(stageInput, quantityLimit);
   };
 
   const getNextDepartment = (
@@ -424,6 +445,22 @@ export function BatchStageProcessor({
       return;
     }
 
+    for (const batch of batches) {
+      if (!selectedBatches.has(batch.id)) continue;
+      const formData = values.batches.find((b) => b.id === batch.id);
+      if (!formData) continue;
+
+      const maxAllowed = getMaxAllowedAccepted(batch);
+      if (formData.accepted > maxAllowed) {
+        toast({
+          variant: "destructive",
+          title: "Invalid Accepted Quantity",
+          description: "Accepted quantity cannot be greater than the specified quantity",
+        });
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -550,6 +587,22 @@ export function BatchStageProcessor({
         const formData = values.batches.find((b) => b.id === batch.id);
         if (!formData) continue;
 
+        const maxAllowed = getMaxAllowedAccepted(batch);
+        if (formData.accepted > maxAllowed) {
+          toast({
+            variant: "destructive",
+            title: "Invalid Accepted Quantity",
+            description: "Accepted quantity cannot be greater than the specified quantity",
+          });
+          setIsEndingCycle(false);
+          return;
+        }
+      }
+
+      for (const batch of batches) {
+        const formData = values.batches.find((b) => b.id === batch.id);
+        if (!formData) continue;
+
         const currentTotal = formData.accepted + formData.rejected;
         const isCompleted = currentTotal > 0;
 
@@ -650,6 +703,22 @@ export function BatchStageProcessor({
       if (batchesWithThisAsLastStage.length === 0) {
         console.log("DEBUG handleFinishBatch - No batches found with this as last stage, returning");
         return;
+      }
+
+      for (const batch of batchesWithThisAsLastStage) {
+        const formData = values.batches.find((b) => b.id === batch.id);
+        if (!formData) continue;
+
+        const maxAllowed = getMaxAllowedAccepted(batch);
+        if (formData.accepted > maxAllowed) {
+          toast({
+            variant: "destructive",
+            title: "Invalid Accepted Quantity",
+            description: "Accepted quantity cannot be greater than the specified quantity",
+          });
+          setIsFinishing(false);
+          return;
+        }
       }
 
       for (const batch of batchesWithThisAsLastStage) {
@@ -797,6 +866,7 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                   </TableHead>
                   <TableHead>Batch ID</TableHead>
                   <TableHead>Product</TableHead>
+                  <TableHead>Measurement Sketch</TableHead>
                   <TableHead>Date Created</TableHead>
                   {labels.prevStage && (
                     <TableHead>{labels.prevStage}</TableHead>
@@ -819,6 +889,10 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                   const materialsForStage = batch.materials.filter(
                     (m) => m.stage === stage,
                   );
+                  const product = finalStock.find(
+                    (p) => p.name === batch.productName,
+                  );
+                  const measurementSketch = product?.measurementSketch;
 
                   return (
                     <>
@@ -853,6 +927,44 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                         <TableCell className="font-bold">
                           {batch.productName}
                         </TableCell>
+                        <TableCell>
+                          {measurementSketch ? (
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="focus:outline-none"
+                                  disabled={!measurementSketch}
+                                >
+                                  <img
+                                    src={measurementSketch}
+                                    alt={`Measurement sketch for ${batch.productName}`}
+                                    className="h-10 w-10 rounded border object-contain"
+                                  />
+                                </button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>
+                                    Measurement Sketch - {batch.productName}
+                                  </DialogTitle>
+                                  
+                                </DialogHeader>
+                                <div className="flex justify-center">
+                                  <img
+                                    src={measurementSketch}
+                                    alt={`Measurement sketch for ${batch.productName}`}
+                                    className="max-h-[90vh] w-auto rounded border object-contain"
+                                  />
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              No Image
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell className="font-bold">
                           {format(new Date(batch.createdAt), "MM/dd/yyyy")}
                         </TableCell>
@@ -878,14 +990,29 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                                 <FormControl>
                                   <Input 
                                     type="number" 
+                                    className={numberInputClassName}
                                     {...field} 
                                     disabled={isAnyButtonDisabled}
                                     onChange={(e) => {
-                                      field.onChange(e);
+                                      const rawValue = e.target.value;
+                                      let acceptedValue = Math.max(0, Number(rawValue) || 0);
+                                      const maxAllowed = getMaxAllowedAccepted(batch);
+
+                                      if (acceptedValue > maxAllowed) {
+                                        toast({
+                                          variant: "destructive",
+                                          title: "Invalid Accepted Quantity",
+                                          description: "Accepted quantity cannot be greater than the specified quantity",
+                                        });
+                                        acceptedValue = maxAllowed;
+                                      }
+
+                                      // Normalize display value (strip leading zeros)
+                                      e.target.value = acceptedValue.toString();
+
+                                      field.onChange(acceptedValue);
                                       // Auto-calculate rejected units
-                                      const acceptedValue = Number(e.target.value) || 0;
-                                      const totalInput = getTotalInput(batch);
-                                      const rejectedValue = Math.max(0, totalInput - acceptedValue);
+                                      const rejectedValue = Math.max(0, maxAllowed - acceptedValue);
                                       form.setValue(`batches.${index}.rejected`, rejectedValue);
                                     }}
                                   />
@@ -910,8 +1037,18 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                                 <FormControl>
                                   <Input 
                                     type="number" 
+                                    className={numberInputClassName}
                                     {...field} 
                                     disabled={isAnyButtonDisabled}
+                                    onChange={(e) => {
+                                      const rawValue = e.target.value;
+                                      const rejectedValue = Math.max(0, Number(rawValue) || 0);
+
+                                      // Normalize display value (strip leading zeros)
+                                      e.target.value = rejectedValue.toString();
+
+                                      field.onChange(rejectedValue);
+                                    }}
                                   />
                                 </FormControl>
                                 <FormMessage />
@@ -941,6 +1078,7 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                             </TableCell>
                             <TableCell></TableCell>
                             <TableCell></TableCell>
+                            <TableCell></TableCell>
                             {labels.prevStage && <TableCell></TableCell>}
                             <TableCell className="font-medium">
                               {material.quantity.toLocaleString()} {material.unit}
@@ -955,9 +1093,19 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                                       <FormControl>
                                         <Input 
                                           type="number" 
+                                          className={numberInputClassName}
                                           {...field}
                                           placeholder={material.quantity.toString()}
                                           disabled={isAnyButtonDisabled}
+                                          onChange={(e) => {
+                                            const rawValue = e.target.value;
+                                            const consumptionValue = Math.max(0, Number(rawValue) || 0);
+
+                                            // Normalize display value (strip leading zeros)
+                                            e.target.value = consumptionValue.toString();
+
+                                            field.onChange(consumptionValue);
+                                          }}
                                         />
                                       </FormControl>
                                       <FormMessage />
@@ -974,7 +1122,7 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                 })}
                 {batches.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} className="h-24 text-center">
+                    <TableCell colSpan={10} className="h-24 text-center">
                       No batches are ready for the {stage} stage.
                     </TableCell>
                   </TableRow>

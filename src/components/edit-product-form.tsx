@@ -18,6 +18,8 @@ import { Input } from "@/components/ui/input";
 import { BOMEditor } from "@/components/bom-editor";
 import { ImageUpload } from "@/components/image-upload";
 import { ManufacturingStagesSelector } from "@/components/manufacturing-stages-selector";
+import { uploadImage, deleteImage } from "@/lib/firebase/storage";
+import { useToast } from "@/hooks/use-toast";
 
 import type { FinalStock, BOMRow, ProcessingStageName } from "@/lib/types";
 
@@ -36,6 +38,7 @@ const formSchema = z.object({
   threshold: z.coerce.number().min(0, "Threshold must be 0 or greater.").default(0),
   imageUrl: z.string().optional(),
   imageHint: z.string().optional(),
+  measurementSketch: z.string().optional(),
 });
 
 export function EditProductForm({ product, onProductUpdated }: EditProductFormProps) {
@@ -43,6 +46,7 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
   const [manufacturingStages, setManufacturingStages] = useState<ProcessingStageName[]>(
     product.manufacturingStages || []
   );
+  const { toast } = useToast();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -56,6 +60,7 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
       threshold: typeof product.threshold !== "undefined" ? product.threshold : 0,
       imageUrl: product.imageUrl ?? "",
       imageHint: product.imageHint ?? "",
+      measurementSketch: product.measurementSketch ?? "",
     },
   });
 
@@ -71,6 +76,7 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
       threshold: typeof product.threshold !== "undefined" ? product.threshold : 0,
       imageUrl: product.imageUrl ?? "",
       imageHint: product.imageHint ?? "",
+      measurementSketch: product.measurementSketch ?? "",
     });
 
     // initialize BOM rows if present
@@ -84,6 +90,47 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
     setManufacturingStages(product.manufacturingStages || []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product]);
+
+  const handleMeasurementSketchUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    currentUrl?: string,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
+    if (!allowedTypes.includes(file.type)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid File",
+        description: "Please upload a JPEG or PNG image for the measurement sketch.",
+      });
+      return;
+    }
+
+    try {
+      if (currentUrl) {
+        try {
+          await deleteImage(currentUrl);
+        } catch (error) {
+          console.warn("[EditProductForm] Failed to delete existing measurement sketch:", error);
+        }
+      }
+
+      const url = await uploadImage(file, "measurement-sketches");
+      form.setValue("measurementSketch", url);
+    } catch (error) {
+      console.error("[EditProductForm] Measurement sketch upload failed:", error);
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to upload measurement sketch image.",
+      });
+    }
+  };
 
   function onSubmit(values: z.infer<typeof formSchema>) {
     // Validate manufacturing stages selection
@@ -131,6 +178,7 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
           : product.imageUrl ??
             `https://picsum.photos/seed/${values.id ?? "product"}/400/300`,
       imageHint: values.imageHint ?? product.imageHint,
+      measurementSketch: values.measurementSketch ?? product.measurementSketch,
       // attach bom_per_piece only if valid rows exist
       bom_per_piece: validBomRows.length > 0 ? validBomRows : undefined,
     };
@@ -155,6 +203,37 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
               </FormItem>
             )}
           />
+
+        <FormField
+          control={form.control}
+          name="measurementSketch"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Measurement Sketch</FormLabel>
+              <FormControl>
+                <div className="flex items-center gap-4">
+                  <Input
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png"
+                    onChange={(event) =>
+                      handleMeasurementSketchUpload(event, field.value || undefined)
+                    }
+                  />
+                  {field.value ? (
+                    <img
+                      src={field.value}
+                      alt="Measurement sketch preview"
+                      className="h-12 w-12 rounded border object-contain"
+                    />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No Image</span>
+                  )}
+                </div>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
           <FormField
             control={form.control}
             name="name"

@@ -43,6 +43,7 @@ export interface FinalStock {
   batches?: BatchEntry[]; // Array of batch entries for this product
   quantity?: number; // Accepted quantity from the last completed stage
   threshold?: number; // Low stock threshold for finished products
+  measurementSketch?: string; // URL of the product's measurement sketch image
   createdAt?: string; // Date when batch was accepted into Final Stock
 }
 
