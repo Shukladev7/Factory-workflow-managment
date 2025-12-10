@@ -45,6 +45,7 @@ export function CreateProductForm({
   const [isClient, setIsClient] = useState(false);
   const [bomRows, setBomRows] = useState<BOMRow[]>([]);
   const [manufacturingStages, setManufacturingStages] = useState<ProcessingStageName[]>([]);
+  const [unitThresholds, setUnitThresholds] = useState<{ moulded?: number; machined?: number; assembled?: number }>({});
   const { toast } = useToast();
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -164,6 +165,9 @@ export function CreateProductForm({
         hasManufacturingDetails && validBomRows.length > 0
           ? validBomRows
           : undefined,
+      mouldedThreshold: unitThresholds.moulded ?? 0,
+      machinedThreshold: unitThresholds.machined ?? 0,
+      assembledThreshold: unitThresholds.assembled ?? 0,
       batches: [], // Initialize with empty batches array
       createdAt: new Date().toISOString(),
     };
@@ -345,6 +349,8 @@ export function CreateProductForm({
                   onBOMChange={setBomRows}
                   productName={form.watch("name")}
                   selectedStages={manufacturingStages}
+                  unitThresholds={unitThresholds}
+                  onUnitThresholdsChange={setUnitThresholds}
                 />
               </div>
             </>

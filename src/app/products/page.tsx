@@ -42,7 +42,7 @@ import { ProductDetailsDialog } from "@/components/product-details-dialog";
 import { Badge } from "@/components/ui/badge";
 import { RestockModal } from "@/components/restock-modal";
 import { SortControls, sortArray, type SortDirection } from "@/components/sort-controls";
-import { addRawMaterial } from "@/lib/firebase/firestore-operations";
+import { addRawMaterial, updateRawMaterial, batchUpdateRawMaterials } from "@/lib/firebase/firestore-operations";
 
 // Grouped product interface
 interface GroupedProduct {
@@ -55,8 +55,28 @@ interface GroupedProduct {
   productTemplate: FinalStock | null; // The main product template (if exists)
 }
 
+// Ensure linked raw materials' thresholds reflect the product-level thresholds
+async function syncLinkedMaterialThresholds(product: FinalStock) {
+  const updates: Array<{ id: string; updates: { threshold: number } }> = [];
+
+  if (product.mouldedMaterialId && product.mouldedMaterialId.trim().length > 0) {
+    updates.push({ id: product.mouldedMaterialId, updates: { threshold: product.mouldedThreshold ?? 0 } });
+  }
+  if (product.machinedMaterialId && product.machinedMaterialId.trim().length > 0) {
+    updates.push({ id: product.machinedMaterialId, updates: { threshold: product.machinedThreshold ?? 0 } });
+  }
+  if (product.assembledMaterialId && product.assembledMaterialId.trim().length > 0) {
+    updates.push({ id: product.assembledMaterialId, updates: { threshold: product.assembledThreshold ?? 0 } });
+  }
+
+  if (updates.length > 0) {
+    await batchUpdateRawMaterials(updates);
+  }
+}
+
 const MOULDED_UNIT_ID = "__MOULDED_UNIT__";
 const MACHINED_UNIT_ID = "__MACHINED_UNIT__";
+const ASSEMBLED_UNIT_ID = "__ASSEMBLED_UNIT__";
 
 async function buildLinkedUnitUpdatesForProduct(
   product: FinalStock,
@@ -68,6 +88,7 @@ async function buildLinkedUnitUpdatesForProduct(
   const updatedBom = product.bom_per_piece.map((row) => ({ ...row }));
   let mouldedMaterialId = product.mouldedMaterialId;
   let machinedMaterialId = product.machinedMaterialId;
+  let assembledMaterialId = product.assembledMaterialId;
   let bomChanged = false;
   const now = new Date().toISOString();
 
@@ -81,7 +102,7 @@ async function buildLinkedUnitUpdatesForProduct(
         sku: `M-${product.sku}`,
         quantity: 0,
         unit: "pcs",
-        threshold: 0,
+        threshold: product.mouldedThreshold ?? 0,
         isMoulded: true,
         isFinished: false,
         createdAt: now,
@@ -106,7 +127,7 @@ async function buildLinkedUnitUpdatesForProduct(
         sku: `F-${product.sku}`,
         quantity: 0,
         unit: "pcs",
-        threshold: 0,
+        threshold: product.machinedThreshold ?? 0,
         isMoulded: false,
         isFinished: true,
         createdAt: now,
@@ -116,6 +137,32 @@ async function buildLinkedUnitUpdatesForProduct(
     updatedBom.forEach((row) => {
       if (row.raw_material_id === MACHINED_UNIT_ID) {
         row.raw_material_id = machinedMaterialId as string;
+        bomChanged = true;
+      }
+    });
+  }
+
+  const hasAssembledPlaceholder = updatedBom.some(
+    (row) => row.raw_material_id === ASSEMBLED_UNIT_ID,
+  );
+  if (hasAssembledPlaceholder) {
+    if (!assembledMaterialId) {
+      assembledMaterialId = await addRawMaterial({
+        name: `Assembled ${product.name}`,
+        sku: `A-${product.sku}`,
+        quantity: 0,
+        unit: "pcs",
+        threshold: product.assembledThreshold ?? 0,
+        isMoulded: false,
+        isFinished: false,
+        isAssembled: true,
+        createdAt: now,
+      });
+    }
+
+    updatedBom.forEach((row) => {
+      if (row.raw_material_id === ASSEMBLED_UNIT_ID) {
+        row.raw_material_id = assembledMaterialId as string;
         bomChanged = true;
       }
     });
@@ -131,6 +178,9 @@ async function buildLinkedUnitUpdatesForProduct(
   }
   if (machinedMaterialId && machinedMaterialId !== product.machinedMaterialId) {
     updates.machinedMaterialId = machinedMaterialId;
+  }
+  if (assembledMaterialId && assembledMaterialId !== product.assembledMaterialId) {
+    updates.assembledMaterialId = assembledMaterialId;
   }
 
   return updates;
@@ -226,6 +276,14 @@ export default function ProductsPage() {
         await updateFinalStock(productId, linkedUpdates);
       }
 
+      // Sync thresholds to any linked materials (both newly created and pre-linked)
+      const effectiveProductForSync: FinalStock = {
+        ...newProduct,
+        id: productId,
+        ...linkedUpdates,
+      } as FinalStock;
+      await syncLinkedMaterialThresholds(effectiveProductForSync);
+
       await createActivityLog({
         recordId: productId,
         recordType: "FinalStock",
@@ -265,6 +323,13 @@ export default function ProductsPage() {
     const finalUpdates = { ...baseUpdates, ...linkedUpdates };
 
     await updateFinalStock(id, finalUpdates);
+
+    // After saving product, sync thresholds to linked materials so Store shows correct values
+    const effectiveProductForSync: FinalStock = {
+      ...updatedProduct,
+      ...linkedUpdates,
+    } as FinalStock;
+    await syncLinkedMaterialThresholds(effectiveProductForSync);
     await createActivityLog({
       recordId: id,
       recordType: "FinalStock",

@@ -85,7 +85,6 @@ export function BatchDetailsDialog({
     return Object.entries(batch.processingStages).map(([stage, data]) => ({
       name: stage,
       accepted: data.accepted,
-      rejected: data.rejected,
     }))
   }, [batch, isBatchCompleted])
 
@@ -111,21 +110,18 @@ export function BatchDetailsDialog({
         return {
           input: "Raw Mat. Input",
           accepted: "Accepted Units",
-          rejected: "Rejected Units",
           consumption: "Actual Raw Mat. Consumption",
         }
       case "Machining":
         return {
           input: "Moulded Input",
           accepted: "Accepted Units",
-          rejected: "Rejected Units",
           consumption: "Actual Raw Mat. Consumption",
         }
       case "Assembling":
         return {
           input: "Finished Input",
           accepted: "Accepted Units",
-          rejected: "Rejected Units",
           consumption: "Actual Raw Mat. Consumption",
         }
     }
@@ -161,7 +157,7 @@ export function BatchDetailsDialog({
     }
 
     const inputQty = getInputQty()
-    const totalProcessed = stage.accepted + stage.rejected
+    const totalProcessed = stage.accepted
     // Progress should reflect completion towards the next stage, if applicable.
     const progress = stage.completed ? 100 : inputQty > 0 ? (totalProcessed / inputQty) * 100 : 0
 
@@ -176,8 +172,6 @@ export function BatchDetailsDialog({
           <span className="text-right">{getConsumptionQty()}</span>
           <span>{labels.accepted}:</span>
           <span className="text-right">{stage.accepted.toLocaleString()} units</span>
-          <span>{labels.rejected}:</span>
-          <span className="text-right">{stage.rejected.toLocaleString()} units</span>
         </div>
         <Progress value={progress} />
       </div>
@@ -260,7 +254,6 @@ export function BatchDetailsDialog({
                 <ChartContainer
                   config={{
                     accepted: { label: "Accepted", color: "hsl(var(--chart-2))" },
-                    rejected: { label: "Rejected", color: "hsl(var(--chart-5))" },
                   }}
                   className="h-[250px] w-full"
                 >
@@ -271,7 +264,6 @@ export function BatchDetailsDialog({
                     <Tooltip content={<ChartTooltipContent />} />
                     <Legend />
                     <Bar dataKey="accepted" fill="var(--color-accepted)" radius={4} />
-                    <Bar dataKey="rejected" fill="var(--color-rejected)" radius={4} />
                   </BarChart>
                 </ChartContainer>
               </CardContent>

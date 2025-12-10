@@ -29,7 +29,6 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { canEditProcessingStage } from "@/lib/permissions";
 import { format } from "date-fns";
 import { validateBatchStageAccess } from "@/lib/manufacturing-stages-validation";
-import { useRouter } from "next/navigation";
 import {
   subscribeToBatchesForStage,
   updateBatchStage,
@@ -80,16 +79,16 @@ export function BatchStageProcessor({
   const [isEndingCycle, setIsEndingCycle] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   
-  const { rawMaterials, updateRawMaterial, deleteRawMaterial } =
+  const { rawMaterials, mouldedMaterials, finishedMaterials, assembledMaterials, updateRawMaterial, deleteRawMaterial } =
     useRawMaterials();
   const { finalStock, createFinalStock } = useFinalStock();
   const { createActivityLog } = useActivityLog();
   const { employee } = usePermissions();
   const { toast } = useToast();
-  const router = useRouter();
   
   // Check if user has permission to edit this stage
   const canEditStage = employee ? canEditProcessingStage(employee.role, stage) : false;
+  const showRejected = false;
 
   useEffect(() => {
     console.log("[v0] Setting up real-time subscription for stage:", stage);
@@ -115,7 +114,7 @@ export function BatchStageProcessor({
       batches: batches.map((b) => ({
         id: b.id,
         accepted: b.processingStages[stage]?.accepted || 0,
-        rejected: b.processingStages[stage]?.rejected || 0,
+        rejected: showRejected ? (b.processingStages[stage]?.rejected || 0) : 0,
         materialConsumptions: b.materials
           .filter((m) => m.stage === stage)
           .map((m) => ({
@@ -136,7 +135,7 @@ export function BatchStageProcessor({
       batches: batches.map((b) => ({
         id: b.id,
         accepted: b.processingStages[stage]?.accepted || 0,
-        rejected: b.processingStages[stage]?.rejected || 0,
+        rejected: showRejected ? (b.processingStages[stage]?.rejected || 0) : 0,
         materialConsumptions: b.materials
           .filter((m) => m.stage === stage)
           .map((m) => ({
@@ -145,7 +144,7 @@ export function BatchStageProcessor({
           })),
       })),
     });
-  }, [batches, form, stage]);
+  }, [batches, form, stage, showRejected]);
 
   const addLog = async (
     newLog: Omit<ActivityLog, "id" | "timestamp" | "user">,
@@ -156,6 +155,52 @@ export function BatchStageProcessor({
       user: "System",
     });
   };
+
+  const findStoreMaterialById = (id: string) => {
+    return (
+      rawMaterials.find((m) => m.id === id) ||
+      mouldedMaterials.find((m) => m.id === id) ||
+      finishedMaterials.find((m) => m.id === id) ||
+      assembledMaterials.find((m) => m.id === id) ||
+      null
+    )
+  }
+
+  const getMaxAcceptableUnitsForFirstStage = (batch: Batch, currentStage: ProcessingStageName): number => {
+    const qtyToBuild = Math.max(1, Number(batch.quantityToBuild) || 1)
+    const stageMaterials = batch.materials.filter((m) => m.stage === currentStage)
+    if (stageMaterials.length === 0) return Infinity
+    let maxUnits = Infinity
+    for (const mat of stageMaterials) {
+      const storeMat = findStoreMaterialById(mat.id)
+      const available = Number(storeMat?.quantity || 0)
+      const perPiece = (Number(mat.quantity) || 0) / qtyToBuild
+      if (perPiece > 0) {
+        const possible = Math.floor(available / perPiece)
+        maxUnits = Math.min(maxUnits, possible)
+      }
+    }
+    return maxUnits
+  }
+
+  const getStageInputAvailableUnits = (batch: Batch, currentStage: ProcessingStageName): number => {
+    switch (currentStage) {
+      case "Machining": {
+        const item = mouldedMaterials.find((m) => m.name === `Moulded ${batch.productName}`)
+        return Number(item?.quantity || 0)
+      }
+      case "Assembling": {
+        const item = finishedMaterials.find((m) => m.name === `Machined ${batch.productName}`)
+        return Number(item?.quantity || 0)
+      }
+      case "Testing": {
+        const item = assembledMaterials.find((m) => m.name === `Assembled ${batch.productName}`)
+        return Number(item?.quantity || 0)
+      }
+      default:
+        return Infinity
+    }
+  }
 
   const getRawMaterialForStage = (batch: Batch) => {
     return batch.materials
@@ -190,25 +235,53 @@ export function BatchStageProcessor({
   const numberInputClassName =
     "appearance-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
 
-  const getMaxAllowedAccepted = (batch: Batch): number => {
-    const stageInput = getTotalInput(batch);
-    const quantityLimit =
-      typeof batch.quantityToBuild === "number" && batch.quantityToBuild > 0
-        ? batch.quantityToBuild
-        : stageInput;
+  // Canonical global stage order
+  const STAGE_ORDER: ProcessingStageName[] = [
+    "Molding",
+    "Machining",
+    "Assembling",
+    "Testing",
+  ];
 
-    return Math.min(stageInput, quantityLimit);
+  // Helper: prefer productId lookup, fallback to name. Then prefer product.manufacturingStages over batch.selectedProcesses
+  const getProductForBatch = (batch: Batch) => {
+    const byId = finalStock.find((p) => p.id === batch.productId);
+    if (byId) return byId;
+    return finalStock.find((p) => p.name === batch.productName);
+  };
+
+  const getEffectiveStagesForBatch = (batch: Batch): ProcessingStageName[] => {
+    const product = getProductForBatch(batch);
+    const productStages = product?.manufacturingStages || [];
+    if (Array.isArray(productStages) && productStages.length > 0) {
+      return productStages as ProcessingStageName[];
+    }
+    // Derive from product BOM if available
+    const bomStages: ProcessingStageName[] = Array.from(
+      new Set(
+        (product?.bom_per_piece || [])
+          .map((row: any) => row.stage)
+          .filter((s: any): s is ProcessingStageName =>
+            STAGE_ORDER.includes(s as ProcessingStageName),
+          ),
+      ),
+    ) as ProcessingStageName[];
+    if (bomStages.length > 0) {
+      // Sort according to canonical order
+      return STAGE_ORDER.filter((s) => bomStages.includes(s));
+    }
+    return (batch.selectedProcesses || []) as ProcessingStageName[];
   };
 
   const getNextDepartment = (
     batch: Batch,
     currentStage: ProcessingStageName,
   ): string | null => {
-    const selectedProcesses = batch.selectedProcesses || [];
-    const currentIndex = selectedProcesses.indexOf(currentStage);
+    const effective = getEffectiveStagesForBatch(batch);
+    const currentIndex = effective.indexOf(currentStage);
 
-    if (currentIndex >= 0 && currentIndex < selectedProcesses.length - 1) {
-      return selectedProcesses[currentIndex + 1];
+    if (currentIndex >= 0 && currentIndex < effective.length - 1) {
+      return effective[currentIndex + 1];
     }
 
     return "Final Stock";
@@ -269,9 +342,7 @@ export function BatchStageProcessor({
     const materialsForStage = batch.materials.filter((m) => m.stage === stage);
     
     for (const materialInBatch of materialsForStage) {
-      const materialToUpdate = rawMaterials.find(
-        (rm) => rm.id === materialInBatch.id,
-      );
+      const materialToUpdate = findStoreMaterialById(materialInBatch.id);
       
       if (materialToUpdate) {
         const consumptionData = materialConsumptions.find(
@@ -399,6 +470,56 @@ export function BatchStageProcessor({
       });
     }
   };
+  const createAssembledMaterial = async (batch: Batch, accepted: number) => {
+    const { addRawMaterial } = await import("@/lib/firebase/firestore-operations");
+    const materialName = `Assembled ${batch.productName}`;
+    const existingMaterial = rawMaterials.find(
+      (m) => m.name === materialName && m.isAssembled === true,
+    );
+
+    if (existingMaterial) {
+      const oldQuantity = Number(existingMaterial.quantity) || 0;
+      const newQuantity = oldQuantity + Number(accepted);
+      await updateRawMaterial(existingMaterial.id, {
+        quantity: newQuantity,
+      });
+
+      await addLog({
+        recordId: existingMaterial.id,
+        recordType: "RawMaterial",
+        action: "Stock Adjustment (Batch)",
+        details: `${accepted} assembled items from batch ${batch.id} added to Store. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
+      });
+
+      toast({
+        title: "Assembled Material Updated",
+        description: `${accepted} assembled ${batch.productName} added to existing stock.`,
+      });
+    } else {
+      const assembledMaterialId = await addRawMaterial({
+        name: materialName,
+        sku: `ASSEMB-${Date.now()}`,
+        quantity: accepted,
+        unit: "pcs",
+        threshold: 10,
+        isAssembled: true,
+        sourceBatchId: batch.id,
+        createdAt: new Date().toISOString(),
+      });
+
+      await addLog({
+        recordId: assembledMaterialId,
+        recordType: "RawMaterial",
+        action: "Created",
+        details: `${accepted} assembled items from batch ${batch.id} added to Store.`,
+      });
+
+      toast({
+        title: "Assembled Material Created",
+        description: `${accepted} assembled ${batch.productName} added to Store.`,
+      });
+    }
+  };
 
   const addToFinalStock = async (batch: Batch, accepted: number) => {
     const { getOrCreateProduct, addBatchToProduct } = await import(
@@ -445,21 +566,7 @@ export function BatchStageProcessor({
       return;
     }
 
-    for (const batch of batches) {
-      if (!selectedBatches.has(batch.id)) continue;
-      const formData = values.batches.find((b) => b.id === batch.id);
-      if (!formData) continue;
-
-      const maxAllowed = getMaxAllowedAccepted(batch);
-      if (formData.accepted > maxAllowed) {
-        toast({
-          variant: "destructive",
-          title: "Invalid Accepted Quantity",
-          description: "Accepted quantity cannot be greater than the specified quantity",
-        });
-        return;
-      }
-    }
+    // No upper bound validation for accepted quantity; it can be any non-negative value.
 
     setIsSubmitting(true);
 
@@ -469,7 +576,9 @@ export function BatchStageProcessor({
         const formData = values.batches.find((b) => b.id === batch.id);
         if (!formData) continue;
 
-        const currentTotal = formData.accepted + formData.rejected;
+        const currentTotal = showRejected
+          ? formData.accepted + formData.rejected
+          : formData.accepted;
         const isCompleted = currentTotal > 0;
 
         console.log("[v0] Processing batch:", batch.id, "isCompleted:", isCompleted);
@@ -483,7 +592,7 @@ export function BatchStageProcessor({
         try {
           await updateBatchStage(batch.id, stage, {
             accepted: formData.accepted,
-            rejected: formData.rejected,
+            ...(showRejected ? { rejected: formData.rejected } : {}),
             materialConsumptions,
           });
         } catch (error) {
@@ -509,36 +618,42 @@ export function BatchStageProcessor({
 
           await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted);
 
-          // Get product's manufacturing stages to determine correct flow
-          const product = finalStock.find(p => p.name === batch.productName);
-          const productManufacturingStages = product?.manufacturingStages || batch.selectedProcesses || [];
+            // Get product/effective stages to determine correct flow
+          const product = getProductForBatch(batch);
+          const effectiveStages = getEffectiveStagesForBatch(batch);
           
           // Debug logging
           console.log("DEBUG onSubmit - Batch:", batch.productName, "Stage:", stage);
           console.log("DEBUG onSubmit - Product found:", !!product);
-          console.log("DEBUG onSubmit - Product manufacturing stages:", productManufacturingStages);
+          console.log("DEBUG onSubmit - Effective stages:", effectiveStages);
+          const isLastStage = effectiveStages[effectiveStages.length - 1] === stage;
+          const isMachiningOnly = effectiveStages.length === 1 && effectiveStages[0] === "Machining";
           
-          const selectedProcesses = batch.selectedProcesses || [];
-          const isLastStage = selectedProcesses[selectedProcesses.length - 1] === stage;
-          const isMachiningOnly = selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
-          
-          // Use product's manufacturing stages to determine if it should go to Final Stock
-          const productIsMoldingAndMachiningOnly = productManufacturingStages.length === 2 && 
-            productManufacturingStages.includes("Molding") && productManufacturingStages.includes("Machining");
+          // Use effective stages to determine if it should go to Final Stock
+          const productIsMoldingAndMachiningOnly = effectiveStages.length === 2 && 
+            effectiveStages.includes("Molding") && effectiveStages.includes("Machining");
             
           console.log("DEBUG onSubmit - productIsMoldingAndMachiningOnly:", productIsMoldingAndMachiningOnly);
 
           if (stage === "Molding" && formData.accepted > 0) {
             await createMouldedMaterial(batch, formData.accepted);
-          } else if (stage === "Machining" && productIsMoldingAndMachiningOnly && formData.accepted > 0) {
+          }
+          if (stage === "Assembling" && formData.accepted > 0) {
+            // Always increment Assembled stage inventory
+            await createAssembledMaterial(batch, formData.accepted);
+          }
+          if (stage === "Machining" && productIsMoldingAndMachiningOnly && formData.accepted > 0) {
             // Special case: Product with Molding + Machining only - add to Final Stock when Machining completes
             console.log("DEBUG onSubmit: Adding to Final Stock - Product has only Molding + Machining stages");
             await addToFinalStock(batch, formData.accepted);
-          } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
-            console.log("DEBUG onSubmit: Creating finished materials - Machining only batch");
+          }
+          if (stage === "Machining" && formData.accepted > 0) {
+            // Always increment Machined stage inventory
+            console.log("DEBUG onSubmit: Creating/Updating machined materials for accepted units");
             await createFinishedMaterial(batch, formData.accepted);
-          } else if (isLastStage && stage !== "Molding" && !isMachiningOnly && !productIsMoldingAndMachiningOnly) {
-            console.log("DEBUG onSubmit: Adding to Final Stock - Last stage of multi-stage product");
+          }
+          if (isLastStage && stage === "Testing" && !isMachiningOnly && !productIsMoldingAndMachiningOnly) {
+            console.log("DEBUG onSubmit: Adding to Final Stock - Testing as last stage of multi-stage product");
             await addToFinalStock(batch, formData.accepted);
           }
 
@@ -550,24 +665,6 @@ export function BatchStageProcessor({
         title: "Batches Updated",
         description: `The ${stage} stage has been updated for the submitted batches.`,
       });
-
-      const batchWithNextStage = batches.find((batch) => {
-        const selectedProcesses = batch.selectedProcesses || [];
-        const currentIndex = selectedProcesses.indexOf(stage);
-        return currentIndex >= 0 && currentIndex < selectedProcesses.length - 1;
-      });
-
-      if (batchWithNextStage) {
-        const selectedProcesses = batchWithNextStage.selectedProcesses || [];
-        const currentIndex = selectedProcesses.indexOf(stage);
-        const nextStage = selectedProcesses[currentIndex + 1];
-
-        if (nextStage) {
-          setTimeout(() => {
-            router.push(`/batches/${nextStage.toLowerCase()}`);
-          }, 500);
-        }
-      }
     } finally {
       setIsSubmitting(false);
     }
@@ -583,27 +680,15 @@ export function BatchStageProcessor({
     try {
       const values = form.getValues();
 
-      for (const batch of batches) {
-        const formData = values.batches.find((b) => b.id === batch.id);
-        if (!formData) continue;
-
-        const maxAllowed = getMaxAllowedAccepted(batch);
-        if (formData.accepted > maxAllowed) {
-          toast({
-            variant: "destructive",
-            title: "Invalid Accepted Quantity",
-            description: "Accepted quantity cannot be greater than the specified quantity",
-          });
-          setIsEndingCycle(false);
-          return;
-        }
-      }
+      // No upper bound validation for accepted quantity; it can be any non-negative value.
 
       for (const batch of batches) {
         const formData = values.batches.find((b) => b.id === batch.id);
         if (!formData) continue;
 
-        const currentTotal = formData.accepted + formData.rejected;
+        const currentTotal = showRejected
+          ? formData.accepted + formData.rejected
+          : formData.accepted;
         const isCompleted = currentTotal > 0;
 
         const materialConsumptions: Record<string, number> = {};
@@ -614,7 +699,7 @@ export function BatchStageProcessor({
         try {
           await updateBatchStage(batch.id, stage, {
             accepted: formData.accepted,
-            rejected: formData.rejected,
+            ...(showRejected ? { rejected: formData.rejected } : {}),
             materialConsumptions,
           });
         } catch (error) {
@@ -628,37 +713,46 @@ export function BatchStageProcessor({
         if (isCompleted && !batch.processingStages[stage]?.completed) {
           await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted);
 
-          // Get product's manufacturing stages to determine correct flow
-          const product = finalStock.find(p => p.name === batch.productName);
-          const productManufacturingStages = product?.manufacturingStages || batch.selectedProcesses || [];
+          // Get product/effective stages to determine correct flow
+          const product = getProductForBatch(batch);
+          const effectiveStages = getEffectiveStagesForBatch(batch);
           
           // Debug logging
           console.log("DEBUG - Batch:", batch.productName, "Stage:", stage);
           console.log("DEBUG - Product found:", !!product);
-          console.log("DEBUG - Product manufacturing stages:", productManufacturingStages);
+          console.log("DEBUG - Effective stages:", effectiveStages);
+          const currentIndex = effectiveStages.indexOf(stage);
+          const hasNext = currentIndex >= 0 && currentIndex < effectiveStages.length - 1;
+          const isLastStage = effectiveStages[effectiveStages.length - 1] === stage;
+          const isMachiningOnly = effectiveStages.length === 1 && effectiveStages[0] === "Machining";
           
-          const selectedProcesses = batch.selectedProcesses || [];
-          const isMachiningOnly = selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
-          
-          // Use product's manufacturing stages to determine if it should go to Final Stock
+          // Use effective stages to determine if it should go to Final Stock
           // Check for both "Molding" and "Moulding" spelling variations
-          const productIsMoldingAndMachiningOnly = productManufacturingStages.length === 2 && 
-            (productManufacturingStages.includes("Molding") || productManufacturingStages.includes("Moulding")) && 
-            productManufacturingStages.includes("Machining");
+          const productIsMoldingAndMachiningOnly = effectiveStages.length === 2 && 
+            (effectiveStages.includes("Molding") || effectiveStages.includes("Moulding")) && 
+            effectiveStages.includes("Machining");
             
           console.log("DEBUG - productIsMoldingAndMachiningOnly:", productIsMoldingAndMachiningOnly);
 
           if (stage === "Molding" && formData.accepted > 0) {
             await createMouldedMaterial(batch, formData.accepted);
-          } else if (stage === "Machining" && productIsMoldingAndMachiningOnly && formData.accepted > 0) {
+          }
+          if (stage === "Assembling" && formData.accepted > 0) {
+            // Always increment Assembled stage inventory
+            await createAssembledMaterial(batch, formData.accepted);
+          }
+          if (stage === "Machining" && productIsMoldingAndMachiningOnly && formData.accepted > 0) {
             // Special case: Product with Molding + Machining only - add to Final Stock when Machining completes
             console.log("DEBUG handleEndCycle: Adding to Final Stock - Product has only Molding + Machining stages");
             await addToFinalStock(batch, formData.accepted);
-          } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
-            console.log("DEBUG handleEndCycle: Creating finished materials - Machining only batch");
+          }
+          if (stage === "Machining" && formData.accepted > 0) {
+            // Always increment Machined stage inventory
+            console.log("DEBUG handleEndCycle: Creating/Updating machined materials for accepted units");
             await createFinishedMaterial(batch, formData.accepted);
-          } else if (stage !== "Molding" && !isMachiningOnly && !productIsMoldingAndMachiningOnly) {
-            console.log("DEBUG handleEndCycle: Adding to Final Stock - Last stage of multi-stage product");
+          }
+          if (isLastStage && stage === "Testing" && !isMachiningOnly && !productIsMoldingAndMachiningOnly) {
+            console.log("DEBUG handleEndCycle: Adding to Final Stock - Testing as last stage of multi-stage product");
             await addToFinalStock(batch, formData.accepted);
           }
 
@@ -670,10 +764,6 @@ export function BatchStageProcessor({
         title: "Cycle Ended",
         description: `The production cycle has been ended at the ${stage} stage for the submitted batches.`,
       });
-
-      setTimeout(() => {
-        router.push("/batches/overview");
-      }, 500);
     } finally {
       setIsEndingCycle(false);
     }
@@ -693,39 +783,57 @@ export function BatchStageProcessor({
       console.log("DEBUG handleFinishBatch - Current stage:", stage);
       
       const batchesWithThisAsLastStage = batches.filter((batch) => {
-        const selectedProcesses = batch.selectedProcesses || [];
-        console.log("DEBUG handleFinishBatch - Batch:", batch.id, "selectedProcesses:", selectedProcesses, "lastStage:", selectedProcesses[selectedProcesses.length - 1]);
-        return selectedProcesses[selectedProcesses.length - 1] === stage;
+        const effectiveStages = getEffectiveStagesForBatch(batch);
+        const lastStage = effectiveStages[effectiveStages.length - 1];
+        console.log("DEBUG handleFinishBatch - Batch:", batch.id, "effectiveStages:", effectiveStages, "lastStage:", lastStage);
+        return lastStage === stage;
       });
 
       console.log("DEBUG handleFinishBatch - Batches with this as last stage:", batchesWithThisAsLastStage.length);
       
-      if (batchesWithThisAsLastStage.length === 0) {
-        console.log("DEBUG handleFinishBatch - No batches found with this as last stage, returning");
+      const targetBatches = batchesWithThisAsLastStage.length > 0 ? batchesWithThisAsLastStage : batches;
+      if (targetBatches.length === 0) {
+        console.log("DEBUG handleFinishBatch - No target batches for this stage, returning");
         return;
       }
 
-      for (const batch of batchesWithThisAsLastStage) {
-        const formData = values.batches.find((b) => b.id === batch.id);
-        if (!formData) continue;
-
-        const maxAllowed = getMaxAllowedAccepted(batch);
-        if (formData.accepted > maxAllowed) {
-          toast({
-            variant: "destructive",
-            title: "Invalid Accepted Quantity",
-            description: "Accepted quantity cannot be greater than the specified quantity",
-          });
-          setIsFinishing(false);
-          return;
+      // Stock check before finishing: ensure available inventory covers required consumption for this stage
+      const shortages: string[] = []
+      for (const batch of targetBatches) {
+        const formData = values.batches.find((b) => b.id === batch.id)
+        if (!formData) continue
+        const materialsForStage = batch.materials.filter((m) => m.stage === stage)
+        for (const materialInBatch of materialsForStage) {
+          const rm = findStoreMaterialById(materialInBatch.id)
+          const mc = formData.materialConsumptions.find((x) => x.materialId === materialInBatch.id)
+          const required = Math.max(0, Number(mc?.actualConsumption) || 0)
+          const available = Number(rm?.quantity || 0)
+          if (rm && required > available) {
+            shortages.push(`Batch ${batch.id} - ${rm.name}: need ${required} ${rm.unit}, have ${available} ${rm.unit}`)
+          }
         }
       }
 
-      for (const batch of batchesWithThisAsLastStage) {
+      if (shortages.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Insufficient Stock",
+          description: `Cannot finish batch. Shortages -> ${shortages.join("; ")}`,
+        })
+        return
+      }
+
+      // Note: Acceptance limits are intentionally not enforced here per user request.
+
+      // No upper bound validation for accepted quantity; it can be any non-negative value.
+
+      for (const batch of targetBatches) {
         const formData = values.batches.find((b) => b.id === batch.id);
         if (!formData) continue;
 
-        const currentTotal = formData.accepted + formData.rejected;
+        const currentTotal = showRejected
+          ? formData.accepted + formData.rejected
+          : formData.accepted;
         const isCompleted = currentTotal > 0;
 
         const materialConsumptions: Record<string, number> = {};
@@ -736,7 +844,7 @@ export function BatchStageProcessor({
         try {
           await updateBatchStage(batch.id, stage, {
             accepted: formData.accepted,
-            rejected: formData.rejected,
+            ...(showRejected ? { rejected: formData.rejected } : {}),
             materialConsumptions,
           });
         } catch (error) {
@@ -747,37 +855,45 @@ export function BatchStageProcessor({
         if (!batch.processingStages[stage]?.completed) {
           await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted);
 
-// Get product's manufacturing stages to determine correct flow
-const product = finalStock.find(p => p.name === batch.productName);
-const productManufacturingStages = product?.manufacturingStages || batch.selectedProcesses || [];
+// Get product/effective stages to determine correct flow
+const product = getProductForBatch(batch);
+const effectiveStages = getEffectiveStagesForBatch(batch);
 
 console.log("DEBUG handleFinishBatch - Product lookup:", batch.productName);
 console.log("DEBUG handleFinishBatch - Product found:", !!product);
-console.log("DEBUG handleFinishBatch - Product manufacturing stages:", productManufacturingStages);
+console.log("DEBUG handleFinishBatch - Effective stages:", effectiveStages);
 console.log("DEBUG handleFinishBatch - All finalStock products:", finalStock.map(p => p.name));
-
-const selectedProcesses = batch.selectedProcesses || [];
-const isMachiningOnly = selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
+const currentIndex = effectiveStages.indexOf(stage);
+const hasNext = currentIndex >= 0 && currentIndex < effectiveStages.length - 1;
+const isLastStage = effectiveStages[effectiveStages.length - 1] === stage;
+const isMachiningOnly = effectiveStages.length === 1 && effectiveStages[0] === "Machining";
 
 // Use product's manufacturing stages to determine if it should go to Final Stock
-const productIsMoldingAndMachiningOnly = productManufacturingStages.length === 2 && 
-  productManufacturingStages.includes("Molding") && productManufacturingStages.includes("Machining");
+const productIsMoldingAndMachiningOnly = effectiveStages.length === 2 && 
+  effectiveStages.includes("Molding") && effectiveStages.includes("Machining");
   
 console.log("DEBUG handleFinishBatch - productIsMoldingAndMachiningOnly:", productIsMoldingAndMachiningOnly);
-console.log("DEBUG handleFinishBatch - Current stage:", stage);
+console.log("DEBUG handleFinishBatch - Current stage:", stage, "hasNext:", hasNext, "isLastStage:", isLastStage);
 
-  
           if (stage === "Molding" && formData.accepted > 0) {
             await createMouldedMaterial(batch, formData.accepted);
-          } else if (stage === "Machining" && productIsMoldingAndMachiningOnly && formData.accepted > 0) {
+          }
+          if (stage === "Assembling" && formData.accepted > 0) {
+            // Always increment Assembled stage inventory
+            await createAssembledMaterial(batch, formData.accepted);
+          }
+          if (stage === "Machining" && productIsMoldingAndMachiningOnly && formData.accepted > 0) {
             // Special case: Product with Molding + Machining only - add to Final Stock when Machining completes
             console.log("DEBUG: Adding to Final Stock - Product has only Molding + Machining stages");
             await addToFinalStock(batch, formData.accepted);
-          } else if (stage === "Machining" && isMachiningOnly && formData.accepted > 0) {
-            console.log("DEBUG: Creating finished materials - Machining only batch");
+          }
+          if (stage === "Machining" && formData.accepted > 0) {
+            // Always increment Machined stage inventory
+            console.log("DEBUG: Creating/Updating machined materials for accepted units");
             await createFinishedMaterial(batch, formData.accepted);
-          } else if (stage !== "Molding" && !isMachiningOnly && !productIsMoldingAndMachiningOnly) {
-            console.log("DEBUG: Adding to Final Stock - Last stage of multi-stage product");
+          }
+          if (isLastStage && stage === "Testing" && !isMachiningOnly && !productIsMoldingAndMachiningOnly) {
+            console.log("DEBUG: Adding to Final Stock - Testing as last stage of multi-stage product");
             await addToFinalStock(batch, formData.accepted);
           }
 
@@ -807,20 +923,18 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
               ? "Machining completed. Items have been added to Final Stock (Product has only Molding + Machining stages)."
               : stage === "Machining" && hasMachiningOnlyBatch
                 ? "Machining completed. Items have been added to Store."
-                : "The batch has been finalized and added to the Final Stock list.",
+                : stage === "Testing"
+                  ? "Testing completed. Final product added to Final Stock."
+                  : "Stage completed.",
       });
-
-      setTimeout(() => {
-        router.push("/batches/overview");
-      }, 500);
     } finally {
       setIsFinishing(false);
     }
   };
 
   const hasAnyBatchWithThisAsLastStage = batches.some((batch) => {
-    const selectedProcesses = batch.selectedProcesses || [];
-    return selectedProcesses[selectedProcesses.length - 1] === stage;
+    const effectiveStages = getEffectiveStagesForBatch(batch);
+    return effectiveStages[effectiveStages.length - 1] === stage;
   });
 
   const isAnyButtonDisabled = isSubmitting || isEndingCycle || isFinishing || !canEditStage;
@@ -876,7 +990,9 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                     Actual Consumption
                   </TableHead>
                   <TableHead className="w-[150px]">{labels.accepted}</TableHead>
-                  <TableHead className="w-[150px]">{labels.rejected}</TableHead>
+                  {showRejected && (
+                    <TableHead className="w-[150px]">{labels.rejected}</TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -924,7 +1040,17 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                         <TableCell className="font-mono text-xs font-bold">
                           {batch.id}
                         </TableCell>
-                        <TableCell className="font-bold">
+                        <TableCell
+                          className="font-bold cursor-pointer select-none"
+                          onClick={() => {
+                            if (isAnyButtonDisabled) return;
+                            const fieldPath = `batches.${index}.accepted` as const;
+                            const currentAccepted =
+                              Number(form.getValues(fieldPath) as any) || 0;
+                            const nextAccepted = currentAccepted + 1;
+                            form.setValue(fieldPath, nextAccepted);
+                          }}
+                        >
                           {batch.productName}
                         </TableCell>
                         <TableCell>
@@ -995,25 +1121,10 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                                     disabled={isAnyButtonDisabled}
                                     onChange={(e) => {
                                       const rawValue = e.target.value;
-                                      let acceptedValue = Math.max(0, Number(rawValue) || 0);
-                                      const maxAllowed = getMaxAllowedAccepted(batch);
-
-                                      if (acceptedValue > maxAllowed) {
-                                        toast({
-                                          variant: "destructive",
-                                          title: "Invalid Accepted Quantity",
-                                          description: "Accepted quantity cannot be greater than the specified quantity",
-                                        });
-                                        acceptedValue = maxAllowed;
-                                      }
-
+                                      const acceptedValue = Math.max(0, Number(rawValue) || 0);
                                       // Normalize display value (strip leading zeros)
                                       e.target.value = acceptedValue.toString();
-
                                       field.onChange(acceptedValue);
-                                      // Auto-calculate rejected units
-                                      const rejectedValue = Math.max(0, maxAllowed - acceptedValue);
-                                      form.setValue(`batches.${index}.rejected`, rejectedValue);
                                     }}
                                   />
                                 </FormControl>
@@ -1022,40 +1133,42 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                             )}
                           />
                         </TableCell>
-                        <TableCell
-                          rowSpan={
-                            materialsForStage.length > 0
-                              ? materialsForStage.length + 1
-                              : 1
-                          }
-                        >
-                          <FormField
-                            control={form.control}
-                            name={`batches.${index}.rejected`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormControl>
-                                  <Input 
-                                    type="number" 
-                                    className={numberInputClassName}
-                                    {...field} 
-                                    disabled={isAnyButtonDisabled}
-                                    onChange={(e) => {
-                                      const rawValue = e.target.value;
-                                      const rejectedValue = Math.max(0, Number(rawValue) || 0);
+                        {showRejected && (
+                          <TableCell
+                            rowSpan={
+                              materialsForStage.length > 0
+                                ? materialsForStage.length + 1
+                                : 1
+                            }
+                          >
+                            <FormField
+                              control={form.control}
+                              name={`batches.${index}.rejected`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input 
+                                      type="number" 
+                                      className={numberInputClassName}
+                                      {...field} 
+                                      disabled={isAnyButtonDisabled}
+                                      onChange={(e) => {
+                                        const rawValue = e.target.value;
+                                        const rejectedValue = Math.max(0, Number(rawValue) || 0);
 
-                                      // Normalize display value (strip leading zeros)
-                                      e.target.value = rejectedValue.toString();
+                                        // Normalize display value (strip leading zeros)
+                                        e.target.value = rejectedValue.toString();
 
-                                      field.onChange(rejectedValue);
-                                    }}
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </TableCell>
+                                        field.onChange(rejectedValue);
+                                      }}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </TableCell>
+                        )}
                       </TableRow>
 
                       {materialsForStage.map((material, matIndex) => {
@@ -1063,6 +1176,17 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                         const materialConsumptionIndex = batchFormData?.materialConsumptions?.findIndex(
                           (mc: any) => mc.materialId === material.id
                         ) ?? -1;
+
+                        // Auto-compute Raw Material Input = Accepted × (BOM qty per piece)
+                        const acceptedValue = Number(form.watch(`batches.${index}.accepted`) ?? 0) || 0;
+                        const bomPerPiece = (() => {
+                          const rows = (product?.bom_per_piece as any[]) || [];
+                          const match = rows.find((row: any) => row.stage === stage && row.raw_material_id === material.id);
+                          if (match && typeof match.qty_per_piece === "number") return match.qty_per_piece;
+                          const qtyToBuild = Number(batch.quantityToBuild || 0);
+                          return qtyToBuild > 0 ? Number(material.quantity || 0) / qtyToBuild : 0;
+                        })();
+                        const autoRawInput = acceptedValue * bomPerPiece;
 
                         return (
                           <TableRow
@@ -1073,7 +1197,21 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                                 : ""
                             }
                           >
-                            <TableCell className="pl-8 text-sm italic">
+                            <TableCell
+                              className="pl-8 text-sm italic cursor-pointer select-none"
+                              onClick={() => {
+                                if (isAnyButtonDisabled) return;
+                                if (materialConsumptionIndex < 0) return;
+
+                                const fieldPath =
+                                  `batches.${index}.materialConsumptions.${materialConsumptionIndex}.actualConsumption` as const;
+                                const current =
+                                  Number(form.getValues(fieldPath) as any) || 0;
+                                const next = current + 1;
+
+                                form.setValue(fieldPath, next);
+                              }}
+                            >
                               {material.name}
                             </TableCell>
                             <TableCell></TableCell>
@@ -1081,7 +1219,7 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                             <TableCell></TableCell>
                             {labels.prevStage && <TableCell></TableCell>}
                             <TableCell className="font-medium">
-                              {material.quantity.toLocaleString()} {material.unit}
+                              {autoRawInput.toLocaleString()} {material.unit}
                             </TableCell>
                             <TableCell>
                               {materialConsumptionIndex >= 0 && (
@@ -1122,7 +1260,7 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
                 })}
                 {batches.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="h-24 text-center">
+                    <TableCell colSpan={showRejected ? 10 : 9} className="h-24 text-center">
                       No batches are ready for the {stage} stage.
                     </TableCell>
                   </TableRow>
@@ -1133,22 +1271,13 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage);
         </Card>
         {batches.length > 0 && (
           <div className="flex justify-end gap-2 mt-4">
-            {hasAnyBatchWithThisAsLastStage ? (
-              <Button 
-                type="button" 
-                onClick={handleFinishBatch}
-                disabled={isAnyButtonDisabled}
-              >
-                {isFinishing ? "Finishing..." : "Finish Batch"}
-              </Button>
-            ) : (
-              <Button 
-                type="submit"
-                disabled={isAnyButtonDisabled}
-              >
-                {isSubmitting ? "Processing..." : "Proceed to next stage"}
-              </Button>
-            )}
+            <Button 
+              type="button" 
+              onClick={handleFinishBatch}
+              disabled={isAnyButtonDisabled}
+            >
+              {isFinishing ? "Finishing..." : "Finish Batch"}
+            </Button>
           </div>
         )}
       </form>

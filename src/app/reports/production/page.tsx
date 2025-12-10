@@ -54,14 +54,14 @@ function calculateRawMaterialWastage(batch: Batch): Record<string, number> {
       }
     }
     
-    const rawMaterialInput = Number(material.quantity || 0)
-    
-    // Wastage = Actual Consumption - Raw Material Input (only if Actual Consumption > Raw Material Input)
-    if (actualConsumption > rawMaterialInput) {
-      wastage[material.name] = actualConsumption - rawMaterialInput
-    } else {
-      wastage[material.name] = 0
-    }
+    // Raw Material Input = Accepted × (BOM qty per piece)
+    const accepted = Number(stageData?.accepted || 0)
+    const qtyToBuild = Number(batch.quantityToBuild || 0)
+    const bomPerPiece = qtyToBuild > 0 ? Number(material.quantity || 0) / qtyToBuild : 0
+    const rawMaterialInput = accepted * bomPerPiece
+
+    // Wastage = Actual Consumption - Raw Material Input (floor at 0)
+    wastage[material.name] = Math.max(0, actualConsumption - rawMaterialInput)
   }
   
   return wastage
@@ -93,8 +93,6 @@ export default function ProductionReportsPage() {
         (Number(s?.Testing?.rejected) || 0)
 
       const producedUnits = getFinalOutputForBatch(b)
-      // Planned Units should represent planned finished product units, not raw material quantity
-      const plannedUnits = b.quantityToBuild || 0
       const rawMaterialWastage = calculateRawMaterialWastage(b)
 
       return {
@@ -103,7 +101,6 @@ export default function ProductionReportsPage() {
         batchId: b.id,
         productName: b.productName,
         status: b.status,
-        plannedUnits,
         producedUnits,
         rejectedUnits,
         rawMaterialWastage,

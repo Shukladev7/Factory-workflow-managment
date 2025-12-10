@@ -23,7 +23,7 @@ interface ProductsStagesHeatmapProps {
   className?: string
 }
 
-type MetricType = "efficiency" | "production" | "wastage"
+type MetricType = "efficiency" | "production"
 type ColorScheme = "performance" | "production" | "quality"
 
 const stages = ["Molding", "Machining", "Assembling", "Testing"] as const
@@ -51,13 +51,7 @@ const getColorIntensity = (value: number, max: number, min: number, metricType: 
       if (normalizedValue >= 0.2) return "bg-blue-200"
       return "bg-blue-100"
     
-    case "wastage":
-      // Red scale for wastage (higher is worse)
-      if (normalizedValue >= 0.8) return "bg-red-500 text-white"
-      if (normalizedValue >= 0.6) return "bg-red-400 text-white"
-      if (normalizedValue >= 0.4) return "bg-red-300"
-      if (normalizedValue >= 0.2) return "bg-red-200"
-      return "bg-red-100"
+    
     
     default:
       return "bg-gray-100"
@@ -69,7 +63,6 @@ const formatValue = (value: number, metricType: MetricType): string => {
     case "efficiency":
       return `${value.toFixed(1)}%`
     case "production":
-    case "wastage":
       return value.toLocaleString()
     default:
       return value.toString()
@@ -82,8 +75,6 @@ const getMetricValue = (stageData: HeatmapData["stages"][Stage], metricType: Met
       return stageData.efficiency
     case "production":
       return stageData.accepted
-    case "wastage":
-      return stageData.rejected
     default:
       return 0
   }
@@ -112,26 +103,19 @@ export function ProductsStagesHeatmap({ data, className }: ProductsStagesHeatmap
   const metricLabels = {
     efficiency: "Efficiency (%)",
     production: "Production Volume",
-    wastage: "Wastage/Rejected"
   }
 
   const metricDescriptions = {
     efficiency: "Production efficiency percentage by product and stage",
     production: "Total accepted units produced by product and stage", 
-    wastage: "Total rejected/wasted units by product and stage"
   }
 
   const sortedData = useMemo(() => {
     return [...data].sort((a, b) => {
       if (selectedMetric === "efficiency") {
         return b.overallEfficiency - a.overallEfficiency
-      } else if (selectedMetric === "wastage") {
-        // For wastage, sort by total rejected (higher wastage first to highlight issues)
-        const aTotalWastage = Object.values(a.stages).reduce((sum, stage) => sum + stage.rejected, 0)
-        const bTotalWastage = Object.values(b.stages).reduce((sum, stage) => sum + stage.rejected, 0)
-        return bTotalWastage - aTotalWastage
       }
-      // Default to production volume (including for "production" metric)
+      // Default to production volume
       return b.totalProduced - a.totalProduced
     })
   }, [data, selectedMetric])
@@ -204,7 +188,6 @@ export function ProductsStagesHeatmap({ data, className }: ProductsStagesHeatmap
               <SelectContent>
                 <SelectItem value="efficiency">Efficiency</SelectItem>
                 <SelectItem value="production">Production Volume</SelectItem>
-                <SelectItem value="wastage">Wastage</SelectItem>
               </SelectContent>
             </Select>
             
@@ -370,12 +353,7 @@ export function ProductsStagesHeatmap({ data, className }: ProductsStagesHeatmap
                       {stage.accepted.toLocaleString()} units
                     </div>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground">Rejected:</span>
-                    <div className="font-medium text-red-600">
-                      {stage.rejected.toLocaleString()} units
-                    </div>
-                  </div>
+                  {/* Rejected removed */}
                   <div className="col-span-2 md:col-span-4">
                     <span className="text-muted-foreground">Efficiency:</span>
                     <div className={cn(

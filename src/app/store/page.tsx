@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Package, MoreHorizontal, FileDown, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import type { RawMaterial } from "@/lib/types"
+import type { RawMaterial, ProcessingStageName, FinalStock } from "@/lib/types"
 import { useRawMaterials } from "@/hooks/use-raw-materials"
 import { useToast } from "@/hooks/use-toast"
 import { useActivityLog } from "@/hooks/use-activity-log"
@@ -18,13 +18,15 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import * as XLSX from "xlsx"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RestockDialog } from "@/components/restock-dialog"
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { EditMaterialForm } from "@/components/edit-material-form"
 import { SortControls, sortArray, type SortDirection } from "@/components/sort-controls"
+import { useFinalStock } from "@/hooks/use-final-stock"
+import { CreateBatchForm } from "@/components/create-batch-form"
 
 export default function StorePage() {
   // removed regularMaterials (raw materials) from destructure
-  const { mouldedMaterials, finishedMaterials, updateRawMaterial, deleteRawMaterial } = useRawMaterials()
+  const { mouldedMaterials, finishedMaterials, assembledMaterials, updateRawMaterial, deleteRawMaterial } = useRawMaterials()
   const { createActivityLog } = useActivityLog()
   const { canEdit } = usePermissions()
   const [isClient, setIsClient] = useState(false)
@@ -34,6 +36,10 @@ export default function StorePage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [sortDirection, setSortDirection] = useState<SortDirection>("none")
   const { toast } = useToast()
+  const { finalStock } = useFinalStock()
+  const [isCreateBatchOpen, setIsCreateBatchOpen] = useState(false)
+  const [initialBatchProductId, setInitialBatchProductId] = useState<string | null>(null)
+  const [initialBatchStage, setInitialBatchStage] = useState<ProcessingStageName | null>(null)
   
   const canEditStore = canEdit("Store")
 
@@ -190,11 +196,90 @@ export default function StorePage() {
     }
   }, [searchQuery, sortDirection])
 
+  const getProductForMaterial = (material: RawMaterial, type: "moulded" | "machined" | "assembled"): FinalStock | null => {
+    if (!finalStock || finalStock.length === 0) return null
+
+    // 1) Primary: explicit link via mouldedMaterialId / machinedMaterialId
+    let product: FinalStock | undefined
+
+    if (type === "moulded") {
+      product = finalStock.find((p) => p.mouldedMaterialId === material.id)
+    } else if (type === "machined") {
+      product = finalStock.find((p) => p.machinedMaterialId === material.id)
+    } else {
+      product = finalStock.find((p) => p.assembledMaterialId === material.id)
+    }
+
+    if (product) return product
+
+    // 2) Fallback: product BOM directly references this raw material
+    const viaBom = finalStock.find((p) =>
+      Array.isArray(p.bom_per_piece) &&
+      p.bom_per_piece.some((row) => row.raw_material_id === material.id)
+    )
+
+    if (viaBom) return viaBom
+
+    // 3) Fallback: name-based convention (e.g. "Moulded X" / "Machined X" / "Assembled X")
+    const name = material.name || ""
+    let baseName = name
+    if (type === "moulded") {
+      baseName = name.replace(/^Moulded\s+/i, "").trim()
+    } else if (type === "machined") {
+      baseName = name.replace(/^Machined\s+/i, "").trim()
+    } else {
+      baseName = name.replace(/^Assembled\s+/i, "").trim()
+    }
+
+    if (baseName) {
+      const viaName = finalStock.find((p) => p.name === baseName)
+      if (viaName) return viaName
+    }
+
+    return null
+  }
+
+  const getNextStageAfter = (product: FinalStock, baseStage: ProcessingStageName): ProcessingStageName | null => {
+    const stages = Array.isArray(product.manufacturingStages) ? product.manufacturingStages : []
+    if (stages.length === 0) return null
+
+    const idx = stages.indexOf(baseStage)
+    if (idx >= 0 && idx < stages.length - 1) {
+      return stages[idx + 1]
+    }
+
+    if (idx >= 0) {
+      return stages[idx]
+    }
+
+    return stages[0]
+  }
+
+  const handleCreateBatchFromMaterial = (material: RawMaterial, type: "moulded" | "machined" | "assembled") => {
+    const product = getProductForMaterial(material, type)
+
+    if (!product) {
+      toast({
+        variant: "destructive",
+        title: "Linked Product Not Found",
+        description: "This store item is not linked to any product. Please check the product setup.",
+      })
+      return
+    }
+
+    const baseStage: ProcessingStageName = type === "moulded" ? "Molding" : type === "machined" ? "Machining" : "Assembling"
+    const nextStage = getNextStageAfter(product, baseStage)
+
+    setInitialBatchProductId(product.id)
+    setInitialBatchStage(nextStage)
+    setIsCreateBatchOpen(true)
+  }
+
   if (!isClient) {
     return null
   }
 
-  const renderMaterialsTable = (materials: RawMaterial[], title: string) => (
+  const renderMaterialsTable = (materials: RawMaterial[], title: string, type: "moulded" | "machined" | "assembled") => (
     <Card>
       <CardContent className="pt-6">
         <Table>
@@ -204,6 +289,7 @@ export default function StorePage() {
               <TableHead>Name</TableHead>
               <TableHead>SKU</TableHead>
               <TableHead>Quantity</TableHead>
+              <TableHead>Min Threshold</TableHead>
               <TableHead>Created At</TableHead>
               <TableHead className="text-right w-[60px]">Actions</TableHead>
             </TableRow>
@@ -212,7 +298,7 @@ export default function StorePage() {
             {materials.length === 0 ? (
               <TableRow>
                 {/* adjusted colspan after removing Source Batch column */}
-                <TableCell colSpan={6} className="h-24 text-center">
+                <TableCell colSpan={7} className="h-24 text-center">
                   <div className="flex flex-col items-center justify-center space-y-2">
                     <Package className="h-8 w-8 text-muted-foreground" />
                     <p className="text-muted-foreground">
@@ -220,59 +306,78 @@ export default function StorePage() {
                         ? "No moulded materials in store yet. Complete a moulding batch to see items here."
                         : title === "Machined Materials"
                         ? "No machined materials in store yet. Complete a machining-only batch to see items here."
+                        : title === "Assembled Materials"
+                        ? "No assembled materials in store yet. Complete an assembling batch to see items here."
                         : "No materials available."}
                     </p>
                   </div>
                 </TableCell>
               </TableRow>
             ) : (
-              materials.map((material) => (
-                <TableRow key={material.id}>
-                  <TableCell className="font-mono text-xs">{material.id}</TableCell>
-                  <TableCell className="font-medium">{material.name}</TableCell>
-                  <TableCell className="font-mono text-xs">{material.sku}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">
-                      {material.quantity.toLocaleString()} {material.unit}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {material.createdAt ? format(new Date(material.createdAt), "MM/dd/yyyy HH:mm") : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        {canEditStore && (
-                          <>
-                            <DropdownMenuItem onClick={() => {
-                              setSelectedItem(material)
-                              setIsEditOpen(true)
-                            }}>Edit</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => {
-                              setSelectedItem(material)
-                              setIsRestockOpen(true)
-                            }}>Restock</DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={() => handleDelete(material)}
-                              className="text-destructive"
-                            >Delete</DropdownMenuItem>
-                          </>
-                        )}
-                        {!canEditStore && (
-                          <DropdownMenuItem disabled>
-                            View Only - No Edit Permission
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
+              materials.map((material) => {
+                const linkedProduct = getProductForMaterial(material, type)
+                const productThreshold = type === "moulded"
+                  ? linkedProduct?.mouldedThreshold
+                  : type === "machined"
+                  ? linkedProduct?.machinedThreshold
+                  : linkedProduct?.assembledThreshold
+                const displayThreshold = (material.threshold && material.threshold > 0)
+                  ? material.threshold
+                  : (productThreshold ?? 0)
+                return (
+                  <TableRow key={material.id}>
+                    <TableCell className="font-mono text-xs">{material.id}</TableCell>
+                    <TableCell className="font-medium">{material.name}</TableCell>
+                    <TableCell className="font-mono text-xs">{material.sku}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">
+                        {material.quantity.toLocaleString()} {material.unit}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{displayThreshold}</TableCell>
+                    <TableCell>
+                      {material.createdAt ? format(new Date(material.createdAt), "MM/dd/yyyy HH:mm") : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent>
+                          {canEditStore && (
+                            <>
+                              <DropdownMenuItem onClick={() => {
+                                setSelectedItem(material)
+                                setIsEditOpen(true)
+                              }}>Edit</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => {
+                                setSelectedItem(material)
+                                setIsRestockOpen(true)
+                              }}>Restock</DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleCreateBatchFromMaterial(material, type)}
+                              >
+                                Create Batch
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleDelete(material)}
+                                className="text-destructive"
+                              >Delete</DropdownMenuItem>
+                            </>
+                          )}
+                          {!canEditStore && (
+                            <DropdownMenuItem disabled>
+                              View Only - No Edit Permission
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>
@@ -284,7 +389,7 @@ export default function StorePage() {
     <>
       <PageHeader
         title="Store"
-        description="View and manage moulded and finished materials inventory."
+        description="View and manage moulded, assembled, and finished materials inventory."
       >
         <Button variant="outline" onClick={() => handleExport(mouldedMaterials, "moulded_materials.xlsx")}>
           <FileDown className="mr-2 h-4 w-4" />
@@ -293,6 +398,10 @@ export default function StorePage() {
         <Button variant="outline" onClick={() => handleExport(finishedMaterials, "finished_materials.xlsx")}>
           <FileDown className="mr-2 h-4 w-4" />
           Export Finished
+        </Button>
+        <Button variant="outline" onClick={() => handleExport(assembledMaterials, "assembled_materials.xlsx")}>
+          <FileDown className="mr-2 h-4 w-4" />
+          Export Assembled
         </Button>
         {/* Raw materials export/button removed */}
       </PageHeader>
@@ -328,15 +437,25 @@ export default function StorePage() {
               {finishedMaterials.length}
             </Badge>
           </TabsTrigger>
+          <TabsTrigger value="assembled">
+            Assembled Materials
+            <Badge variant="secondary" className="ml-2">
+              {assembledMaterials.length}
+            </Badge>
+          </TabsTrigger>
           {/* Raw Materials tab removed */}
         </TabsList>
 
         <TabsContent value="moulded">
-          {renderMaterialsTable(filterAndSortMaterials(mouldedMaterials), "Moulded Materials")}
+          {renderMaterialsTable(filterAndSortMaterials(mouldedMaterials), "Moulded Materials", "moulded")}
         </TabsContent>
 
         <TabsContent value="finished">
-          {renderMaterialsTable(filterAndSortMaterials(finishedMaterials), "Machined Materials")}
+          {renderMaterialsTable(filterAndSortMaterials(finishedMaterials), "Machined Materials", "machined")}
+        </TabsContent>
+
+        <TabsContent value="assembled">
+          {renderMaterialsTable(filterAndSortMaterials(assembledMaterials), "Assembled Materials", "assembled")}
         </TabsContent>
 
         {/* Raw tab removed entirely */}
@@ -363,6 +482,31 @@ export default function StorePage() {
           onRestock={handleRestock}
         />
       )}
+
+      {/* Create Batch Dialog (from Store item) */}
+      <Dialog open={isCreateBatchOpen} onOpenChange={setIsCreateBatchOpen}>
+        <DialogContent className="sm:max-w-[1000px] w-[95vw] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create New Batch</DialogTitle>
+            <DialogDescription>
+              Start a new production batch from this store item.
+            </DialogDescription>
+          </DialogHeader>
+          {initialBatchProductId && (
+            <CreateBatchForm
+              onBatchCreated={(newBatch) => {
+                setIsCreateBatchOpen(false)
+                toast({
+                  title: "Batch Created",
+                  description: `Batch ${newBatch.id} has been created from store item.`,
+                })
+              }}
+              initialProductId={initialBatchProductId}
+              initialStage={initialBatchStage || undefined}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

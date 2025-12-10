@@ -18,23 +18,28 @@ interface BOMEditorProps {
   quantityMultiplier?: number
   productName?: string // Product name to identify moulded/machined units
   selectedStages?: ProcessingStageName[] // Selected manufacturing stages for validation
+  unitThresholds?: { moulded?: number; machined?: number; assembled?: number }
+  onUnitThresholdsChange?: (t: { moulded?: number; machined?: number; assembled?: number }) => void
 }
 
 const processingStages: ProcessingStageName[] = ["Molding", "Machining", "Assembling", "Testing"]
 
-export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMultiplier = 1, productName = "", selectedStages = [] }: BOMEditorProps) {
-  const { rawMaterials, regularMaterials, mouldedMaterials, finishedMaterials, createRawMaterial } = useRawMaterials()
+export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMultiplier = 1, productName = "", selectedStages = [], unitThresholds, onUnitThresholdsChange }: BOMEditorProps) {
+  const { rawMaterials, regularMaterials, mouldedMaterials, finishedMaterials, assembledMaterials, createRawMaterial } = useRawMaterials()
   const [mouldedUnitRequired, setMouldedUnitRequired] = useState(false)
   const [machinedUnitRequired, setMachinedUnitRequired] = useState(false)
+  const [assembledUnitRequired, setAssembledUnitRequired] = useState(false)
   const isProcessingRef = useRef(false)
 
   // Special identifiers for moulded and machined units
   const MOULDED_UNIT_ID = `__MOULDED_UNIT__`
   const MACHINED_UNIT_ID = `__MACHINED_UNIT__`
+  const ASSEMBLED_UNIT_ID = `__ASSEMBLED_UNIT__`
 
   // Find actual material IDs if they exist in inventory
   const mouldedUnitItem = mouldedMaterials.find(m => m.name === `Moulded ${productName}`)
   const machinedUnitItem = finishedMaterials.find(m => m.name === `Machined ${productName}`)
+  const assembledUnitItem = assembledMaterials.find(m => m.name === `Assembled ${productName}`)
 
   // Derive checkbox states from bomRows without causing re-renders
   const hasMouldedUnit = bomRows.some(
@@ -46,11 +51,78 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
     }
   )
 
+  // Handle assembled unit checkbox change
+  const handleAssembledUnitChange = async (checked: boolean) => {
+    if (isProcessingRef.current) return
+    setAssembledUnitRequired(checked)
+
+    const existingAssembledRow = bomRows.find(
+      row => {
+        if (row.raw_material_id === ASSEMBLED_UNIT_ID && row.stage === "Testing") return true
+        if (assembledUnitItem && row.raw_material_id === assembledUnitItem.id && row.stage === "Testing") return true
+        return false
+      }
+    )
+
+    if (checked && !existingAssembledRow) {
+      isProcessingRef.current = true
+      let materialId = assembledUnitItem?.id
+      let materialUnit = assembledUnitItem?.unit || "pcs"
+
+      if (!materialId && productName) {
+        try {
+          materialId = await createRawMaterial({
+            name: `Assembled ${productName}`,
+            sku: `A-${productName}`,
+            quantity: 0,
+            unit: materialUnit,
+            threshold: unitThresholds?.assembled ?? 0,
+            isMoulded: false,
+            isFinished: false,
+            isAssembled: true,
+            createdAt: new Date().toISOString(),
+          })
+        } catch (error) {
+          console.error("[BOMEditor] Failed to create assembled material:", error)
+        }
+      }
+
+      const newRow: BOMRow = {
+        raw_material_id: materialId || ASSEMBLED_UNIT_ID,
+        stage: "Testing",
+        qty_per_piece: 1,
+        unit: materialUnit,
+        notes: "Auto-added: Assembled unit",
+      }
+      onBOMChange([...bomRows, newRow])
+      isProcessingRef.current = false
+    } else if (!checked && existingAssembledRow) {
+      isProcessingRef.current = true
+      const updatedRows = bomRows.filter(
+        row => {
+          if (row.raw_material_id === ASSEMBLED_UNIT_ID && row.stage === "Testing") return false
+          if (assembledUnitItem && row.raw_material_id === assembledUnitItem.id && row.stage === "Testing") return false
+          return true
+        }
+      )
+      onBOMChange(updatedRows)
+      isProcessingRef.current = false
+    }
+  }
+
   const hasMachinedUnit = bomRows.some(
     row => {
       // Check for both placeholder and actual material ID
       if (row.raw_material_id === MACHINED_UNIT_ID) return true
       if (machinedUnitItem && row.raw_material_id === machinedUnitItem.id && row.stage === "Assembling") return true
+      return false
+    }
+  )
+
+  const hasAssembledUnit = bomRows.some(
+    row => {
+      if (row.raw_material_id === ASSEMBLED_UNIT_ID) return true
+      if (assembledUnitItem && row.raw_material_id === assembledUnitItem.id && row.stage === "Testing") return true
       return false
     }
   )
@@ -63,7 +135,10 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
     if (hasMachinedUnit !== machinedUnitRequired) {
       setMachinedUnitRequired(hasMachinedUnit)
     }
-  }, [hasMouldedUnit, hasMachinedUnit, mouldedUnitRequired, machinedUnitRequired])
+    if (hasAssembledUnit !== assembledUnitRequired) {
+      setAssembledUnitRequired(hasAssembledUnit)
+    }
+  }, [hasMouldedUnit, hasMachinedUnit, hasAssembledUnit, mouldedUnitRequired, machinedUnitRequired, assembledUnitRequired])
 
   // Handle moulded unit checkbox change
   const handleMouldedUnitChange = async (checked: boolean) => {
@@ -93,7 +168,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
             sku: `M-${productName}`,
             quantity: 0,
             unit: materialUnit,
-            threshold: 0,
+            threshold: unitThresholds?.moulded ?? 0,
             isMoulded: true,
             isFinished: false,
             createdAt: new Date().toISOString(),
@@ -155,7 +230,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
             sku: `F-${productName}`,
             quantity: 0,
             unit: materialUnit,
-            threshold: 0,
+            threshold: unitThresholds?.machined ?? 0,
             isMoulded: false,
             isFinished: true,
             createdAt: new Date().toISOString(),
@@ -226,10 +301,10 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
     onBOMChange(updatedRows)
   }
 
-  // Check if a row is auto-managed (moulded or machined unit)
+  // Check if a row is auto-managed (moulded, machined, or assembled unit)
   const isAutoManagedRow = (row: BOMRow): boolean => {
     // Check for placeholder IDs
-    if (row.raw_material_id === MOULDED_UNIT_ID || row.raw_material_id === MACHINED_UNIT_ID) {
+    if (row.raw_material_id === MOULDED_UNIT_ID || row.raw_material_id === MACHINED_UNIT_ID || row.raw_material_id === ASSEMBLED_UNIT_ID) {
       return true
     }
     // Check for actual material IDs
@@ -237,6 +312,9 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
       return true
     }
     if (machinedUnitItem && row.raw_material_id === machinedUnitItem.id && row.stage === "Assembling") {
+      return true
+    }
+    if (assembledUnitItem && row.raw_material_id === assembledUnitItem.id && row.stage === "Testing") {
       return true
     }
     return false
@@ -273,7 +351,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
         )}
       </div>
 
-      {/* Product-level checkboxes for moulded and machined units */}
+      {/* Product-level checkboxes for moulded, machined, and assembled units */}
       {!readOnly && productName && (
         <div className="border rounded-lg p-4 bg-muted/50 space-y-3">
           <Label className="text-sm font-semibold">Product-Level Options</Label>
@@ -291,6 +369,20 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
                 Moulded unit required
                 <span className="text-muted-foreground"> (adds: Moulded {productName} → Machining stage, qty = 1)</span>
               </label>
+              <div className="ml-4 flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Min stock</span>
+                <Input
+                  type="number"
+                  className="h-8 w-24"
+                  value={unitThresholds?.moulded ?? 0}
+                  onChange={(e) => onUnitThresholdsChange?.({
+                    moulded: Math.max(0, Number(e.target.value) || 0),
+                    machined: unitThresholds?.machined,
+                    assembled: unitThresholds?.assembled,
+                  })}
+                  disabled={readOnly}
+                />
+              </div>
             </div>
             <div className="flex items-center space-x-2">
               <Checkbox
@@ -305,6 +397,48 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
                 Machined unit required
                 <span className="text-muted-foreground"> (adds: Machined {productName} → Assembling stage, qty = 1)</span>
               </label>
+              <div className="ml-4 flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Min stock</span>
+                <Input
+                  type="number"
+                  className="h-8 w-24"
+                  value={unitThresholds?.machined ?? 0}
+                  onChange={(e) => onUnitThresholdsChange?.({
+                    moulded: unitThresholds?.moulded,
+                    machined: Math.max(0, Number(e.target.value) || 0),
+                    assembled: unitThresholds?.assembled,
+                  })}
+                  disabled={readOnly}
+                />
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="assembled-unit"
+                checked={assembledUnitRequired}
+                onCheckedChange={(checked) => handleAssembledUnitChange(checked === true)}
+              />
+              <label
+                htmlFor="assembled-unit"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Assembled unit required
+                <span className="text-muted-foreground"> (adds: Assembled {productName} → Testing stage, qty = 1)</span>
+              </label>
+              <div className="ml-4 flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Min stock</span>
+                <Input
+                  type="number"
+                  className="h-8 w-24"
+                  value={unitThresholds?.assembled ?? 0}
+                  onChange={(e) => onUnitThresholdsChange?.({
+                    moulded: unitThresholds?.moulded,
+                    machined: unitThresholds?.machined,
+                    assembled: Math.max(0, Number(e.target.value) || 0),
+                  })}
+                  disabled={readOnly}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -344,9 +478,11 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
                         {isAutoManagedRow(row) ? (
                           // Show name for auto-managed rows
                           <SelectItem key={row.raw_material_id} value={row.raw_material_id}>
-                            {row.raw_material_id === MOULDED_UNIT_ID || (mouldedUnitItem && row.raw_material_id === mouldedUnitItem.id) 
-                              ? `Moulded ${productName}` 
-                              : `Finished ${productName}`}
+                            {row.raw_material_id === MOULDED_UNIT_ID || (mouldedUnitItem && row.raw_material_id === mouldedUnitItem.id)
+                              ? `Moulded ${productName}`
+                              : row.raw_material_id === MACHINED_UNIT_ID || (machinedUnitItem && row.raw_material_id === machinedUnitItem.id)
+                                ? `Finished ${productName}`
+                                : `Assembled ${productName}`}
                           </SelectItem>
                         ) : (
                           // Show only regular raw materials for manual rows

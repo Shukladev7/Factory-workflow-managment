@@ -46,6 +46,11 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
   const [manufacturingStages, setManufacturingStages] = useState<ProcessingStageName[]>(
     product.manufacturingStages || []
   );
+  const [unitThresholds, setUnitThresholds] = useState<{ moulded?: number; machined?: number; assembled?: number }>({
+    moulded: product.mouldedThreshold ?? 0,
+    machined: product.machinedThreshold ?? 0,
+    assembled: product.assembledThreshold ?? 0,
+  });
   const { toast } = useToast();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -88,6 +93,12 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
 
     // initialize manufacturing stages
     setManufacturingStages(product.manufacturingStages || []);
+    // initialize unit thresholds
+    setUnitThresholds({
+      moulded: product.mouldedThreshold ?? 0,
+      machined: product.machinedThreshold ?? 0,
+      assembled: product.assembledThreshold ?? 0,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product]);
 
@@ -172,6 +183,9 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
       manufacturingStages,
       gstRate: values.gstRate,
       threshold: values.threshold,
+      mouldedThreshold: unitThresholds.moulded ?? 0,
+      machinedThreshold: unitThresholds.machined ?? 0,
+      assembledThreshold: unitThresholds.assembled ?? 0,
       imageUrl:
         values.imageUrl && values.imageUrl.length > 0
           ? values.imageUrl
@@ -340,6 +354,8 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
             onBOMChange={setBomRows}
             productName={form.watch("name")}
             selectedStages={manufacturingStages}
+            unitThresholds={unitThresholds}
+            onUnitThresholdsChange={setUnitThresholds}
           />
         </div>
 

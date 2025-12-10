@@ -13,9 +13,7 @@ type ReportRow = {
   batchId: string
   productName: string
   status: string
-  plannedUnits: number
   producedUnits: number
-  rejectedUnits: number
   rawMaterialWastage: Record<string, number> // material name -> wastage amount
   durations?: {
     Molding?: number
@@ -81,8 +79,12 @@ function calculateRawMaterialWastage(batch: Batch): Record<string, number> {
       }
     }
     
-    const plannedQuantity = Number(material.quantity || 0)
-    const wastageAmount = Math.max(0, actualConsumption - plannedQuantity)
+    // Raw Material Input = Accepted × (BOM qty per piece)
+    const accepted = Number(stageData?.accepted || 0)
+    const qtyToBuild = Number(batch.quantityToBuild || 0)
+    const bomPerPiece = qtyToBuild > 0 ? Number(material.quantity || 0) / qtyToBuild : 0
+    const rawInput = accepted * bomPerPiece
+    const wastageAmount = Math.max(0, actualConsumption - rawInput)
     wastage[material.name] = Math.round(wastageAmount * 100) / 100
   }
   
@@ -158,9 +160,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
       "Batch ID",
       "Product",
       "Status",
-      "Planned Units",
       "Produced Units",
-      "Rejected Units",
       "Raw Material Wastage",
       "Molding Time (HH:MM:SS)",
       "Machining Time (HH:MM:SS)",
@@ -177,9 +177,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
         r.batchId,
         r.productName.replaceAll(",", " "),
         r.status,
-        String(r.plannedUnits ?? 0),
         String(r.producedUnits ?? 0),
-        String(r.rejectedUnits ?? 0),
         `"${wastageString}"`, // Quote to handle pipe characters in CSV
         dur.Molding != null ? formatMsToHMS(dur.Molding) : "",
         dur.Machining != null ? formatMsToHMS(dur.Machining) : "",
@@ -207,7 +205,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
     setBatchQuery("")
   }
 
-  const totalColumns = 12 // Date, Batch ID, Product, Status, Planned Units, Produced Units, Rejected Units, Raw Material Wastage, 4 time columns
+  const totalColumns = 10 // Date, Batch ID, Product, Status, Produced Units, Raw Material Wastage, 4 time columns
 
   return (
     <div className="space-y-4">
@@ -251,9 +249,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
               <TableHead>Batch ID</TableHead>
               <TableHead>Product</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">Planned Units</TableHead>
               <TableHead className="text-right">Produced Units</TableHead>
-              <TableHead className="text-right">Rejected Units</TableHead>
               <TableHead>Raw Material Wastage</TableHead>
               <TableHead className="text-right">Molding Time</TableHead>
               <TableHead className="text-right">Machining Time</TableHead>
@@ -279,9 +275,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
                     <TableCell className="font-mono text-sm">{r.batchId}</TableCell>
                     <TableCell>{r.productName}</TableCell>
                     <TableCell>{r.status}</TableCell>
-                    <TableCell className="text-right">{formatNumber(r.plannedUnits || 0)}</TableCell>
                     <TableCell className="text-right font-medium">{formatNumber(r.producedUnits || 0)}</TableCell>
-                    <TableCell className="text-right">{formatNumber(r.rejectedUnits || 0)}</TableCell>
                     <TableCell className="font-mono text-sm">{wastageString}</TableCell>
                     <TableCell className="text-right">
                       {dur.Molding != null ? formatMsToHMS(dur.Molding) : "-"}

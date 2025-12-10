@@ -10,7 +10,7 @@ export function useRawMaterials() {
 
   // Separate regular, moulded, and finished materials
   const regularMaterials = useMemo(() => 
-    rawMaterials.filter(m => m.isMoulded !== true && m.isFinished !== true),
+    rawMaterials.filter(m => m.isMoulded !== true && m.isFinished !== true && m.isAssembled !== true),
     [rawMaterials]
   )
 
@@ -21,6 +21,11 @@ export function useRawMaterials() {
 
   const finishedMaterials = useMemo(() => 
     rawMaterials.filter(m => m.isFinished === true),
+    [rawMaterials]
+  )
+
+  const assembledMaterials = useMemo(() =>
+    rawMaterials.filter(m => m.isAssembled === true),
     [rawMaterials]
   )
 
@@ -41,6 +46,7 @@ export function useRawMaterials() {
     regularMaterials,
     mouldedMaterials,
     finishedMaterials,
+    assembledMaterials,
     loading,
     error,
     createRawMaterial,

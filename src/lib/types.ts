@@ -7,6 +7,7 @@ export interface RawMaterial {
   threshold: number;
   isMoulded?: boolean;
   isFinished?: boolean;
+  isAssembled?: boolean;
   sourceBatchId?: string;
   createdAt?: string;
 }
@@ -39,6 +40,11 @@ export interface FinalStock {
   manufacturingStages: ProcessingStageName[]; // Selected manufacturing stages for this product
   mouldedMaterialId?: string;
   machinedMaterialId?: string;
+  assembledMaterialId?: string;
+  // Per-unit low stock thresholds
+  mouldedThreshold?: number;
+  machinedThreshold?: number;
+  assembledThreshold?: number;
   bom_per_piece?: BOMRow[];
   batches?: BatchEntry[]; // Array of batch entries for this product
   quantity?: number; // Accepted quantity from the last completed stage

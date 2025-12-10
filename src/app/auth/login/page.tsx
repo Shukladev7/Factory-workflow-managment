@@ -118,6 +118,9 @@ export default function LoginPage() {
       </Form>
 
       <div className="flex items-center justify-between">
+        <Link href="/auth/signup" className="text-sm text-primary underline underline-offset-4">
+          Create account
+        </Link>
         <button onClick={onForgot} className="text-sm text-primary underline underline-offset-4">
           Forgot password?
         </button>

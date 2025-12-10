@@ -176,13 +176,9 @@ export default function BatchesOverviewPage() {
       "Created At": format(new Date(batch.createdAt), "yyyy-MM-dd HH:mm:ss"),
       Materials: batch.materials.map((m) => `${m.name} (${m.quantity} ${m.unit})`).join(", "),
       "Molding Accepted": batch.processingStages.Molding.accepted,
-      "Molding Rejected": batch.processingStages.Molding.rejected,
       "Machining Accepted": batch.processingStages.Machining.accepted,
-      "Machining Rejected": batch.processingStages.Machining.rejected,
       "Assembling Accepted": batch.processingStages.Assembling.accepted,
-      "Assembling Rejected": batch.processingStages.Assembling.rejected,
       "Testing Accepted": batch.processingStages.Testing.accepted,
-      "Testing Rejected": batch.processingStages.Testing.rejected,
     }))
     const worksheet = XLSX.utils.json_to_sheet(dataToExport)
     const workbook = XLSX.utils.book_new()
@@ -391,7 +387,7 @@ export default function BatchesOverviewPage() {
                           <TableHeader>
                             <TableRow>
                               <TableHead>Material</TableHead>
-                              <TableHead className="text-right">Planned Input</TableHead>
+                              <TableHead className="text-right">Raw Material Input</TableHead>
                               <TableHead className="text-right">Actual Consumption</TableHead>
                               <TableHead className="text-right">Wastage</TableHead>
                             </TableRow>
@@ -411,13 +407,18 @@ export default function BatchesOverviewPage() {
                                   actual = (Number(stageData?.actualConsumption) || 0) * ratio
                                 }
                               }
+                              // Compute Raw Material Input per material: accepted × (BOM qty per piece)
+                              // Approximate bomPerPiece using planned quantity divided by batch quantityToBuild
+                              const qtyToBuild = Number(wastageBatch.quantityToBuild || 0)
+                              const bomPerPiece = qtyToBuild > 0 ? planned / qtyToBuild : 0
+                              const rawInput = accepted * bomPerPiece
                               
-                              const wastage = Math.max(0, actual - planned)
+                              const wastage = Math.max(0, actual - rawInput)
                               
                               return (
                                 <TableRow key={mat.id}>
                                   <TableCell className="font-medium">{mat.name}</TableCell>
-                                  <TableCell className="text-right">{planned.toLocaleString()} {mat.unit}</TableCell>
+                                  <TableCell className="text-right">{rawInput.toLocaleString()} {mat.unit}</TableCell>
                                   <TableCell className="text-right">{actual.toLocaleString()} {mat.unit}</TableCell>
                                   <TableCell className="text-right">
                                     <span className={wastage > 0 ? "text-destructive font-medium" : ""}>
@@ -437,7 +438,6 @@ export default function BatchesOverviewPage() {
                       <h5 className="text-sm font-medium mb-2">Quality Metrics</h5>
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div className="flex justify-between"><span>Accepted Units</span><span className="font-medium">{accepted.toLocaleString()}</span></div>
-                        <div className="flex justify-between"><span>Rejected Units</span><span className="font-medium text-destructive">{rejected.toLocaleString()}</span></div>
                       </div>
                     </div>
                   </div>

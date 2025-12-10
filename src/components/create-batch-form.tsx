@@ -22,7 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type {
   Batch,
   RawMaterial,
@@ -52,7 +52,7 @@ const materialSchema = z.object({
   materialId: z.string().min(1, "Please select a material."),
   quantity: z.coerce.number().min(0, "Quantity must be greater than 0."),
   stage: z.enum(processingStages, { required_error: "Please select a stage." }),
-  materialType: z.enum(["raw", "moulded", "finished"]).optional(),
+  materialType: z.enum(["raw", "moulded", "finished", "assembled"]).optional(),
 });
 
 
@@ -70,9 +70,11 @@ const formSchema = z.object({
 
 interface CreateBatchFormProps {
   onBatchCreated: (batch: Batch) => void;
+  initialProductId?: string;
+  initialStage?: ProcessingStageName;
 }
 
-export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
+export function CreateBatchForm({ onBatchCreated, initialProductId, initialStage }: CreateBatchFormProps) {
   const [isClient, setIsClient] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
@@ -81,6 +83,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
     regularMaterials,
     mouldedMaterials,
     finishedMaterials,
+    assembledMaterials,
   } = useRawMaterials();
   const { finalStock } = useFinalStock();
   const { createActivityLog } = useActivityLog();
@@ -128,6 +131,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
   const selectedProcesses = form.watch("selectedProcesses");
   const selectedProductId = form.watch("productId");
   const quantityToBuild = form.watch("quantityToBuild") || 1;
+  const hasAppliedInitialConfigRef = useRef(false);
 
   // Derive allowed stages from the selected product's manufacturing stages.
   // If the product has defined manufacturing stages, only those should be selectable
@@ -140,7 +144,7 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
       ? selectedProduct.manufacturingStages
       : [...processingStages];
 
-  // Note: Removed auto-fill of manufacturing stages - users must manually select processes
+  // Note: Users must manually select processes; no auto-fill of manufacturing stages on product selection
 
    // Ensure selected processes are always compatible with the selected product's stages
    useEffect(() => {
@@ -181,12 +185,14 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
           const material = rawMaterials.find((m) => m.id === bomRow.raw_material_id);
           
           // Determine material type based on material properties
-          let materialType: "raw" | "moulded" | "finished" = "raw";
+          let materialType: "raw" | "moulded" | "finished" | "assembled" = "raw";
           if (material) {
             if (material.isFinished) {
               materialType = "finished";
             } else if (material.isMoulded) {
               materialType = "moulded";
+            } else if (material.isAssembled) {
+              materialType = "assembled";
             }
           }
 
@@ -214,6 +220,26 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
       }
     }
   }, [selectedProductId, selectedProcesses, quantityToBuild, finalStock, form, rawMaterials]);
+
+  useEffect(() => {
+    if (!initialProductId || hasAppliedInitialConfigRef.current) return;
+
+    const currentProductId = form.getValues("productId");
+    if (currentProductId && currentProductId !== initialProductId) return;
+
+    const product = finalStock.find((p) => p.id === initialProductId);
+    if (!product) return;
+
+    const productStages = product.manufacturingStages || [];
+
+    // Set the product; do not auto-fill processes. If an initialStage is provided and valid, select only that one.
+    form.setValue("productId", initialProductId);
+    if (initialStage && productStages.includes(initialStage)) {
+      form.setValue("selectedProcesses", [initialStage]);
+    }
+
+    hasAppliedInitialConfigRef.current = true;
+  }, [initialProductId, initialStage, finalStock, form, hasAppliedInitialConfigRef]);
 
   useEffect(() => {
     setIsClient(true);
@@ -1213,6 +1239,134 @@ export function CreateBatchForm({ onBatchCreated }: CreateBatchFormProps) {
                   {/* No manual add button - finished items are fully auto-managed */}
                 </div>
               )}
+            {/* Assembled Items Section - Visible when Testing is selected */}
+            {selectedProcesses.includes("Testing") && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <FormLabel className="text-base font-semibold">
+                    Assembled Items from Store
+                  </FormLabel>
+                  <Badge variant="secondary">Optional</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Select assembled units to be consumed at Testing
+                </p>
+                {fields
+                  .filter((_, idx) =>
+                    form.watch(`materials.${idx}.materialType`) === "assembled",
+                  )
+                  .map((field) => {
+                    const index = fields.indexOf(field);
+                    const selectedMaterial = assembledMaterials.find(
+                      (m) => m.id === form.watch(`materials.${index}.materialId`),
+                    );
+
+                    return (
+                      <div
+                        key={field.id}
+                        className="flex items-end gap-4 p-4 border rounded-md relative bg-amber-50/40"
+                      >
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
+                          <FormField
+                            control={form.control}
+                            name={`materials.${index}.materialId`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Assembled Item</FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  defaultValue={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select assembled item" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {assembledMaterials.length === 0 ? (
+                                      <div className="p-2 text-sm text-muted-foreground">
+                                        No assembled items in Store. Complete an assembling batch first.
+                                      </div>
+                                    ) : (
+                                      assembledMaterials.map((material) => (
+                                        <SelectItem
+                                          key={material.id}
+                                          value={material.id}
+                                        >
+                                          🧩 {material.name} (Stock: {material.quantity.toLocaleString()} {material.unit})
+                                        </SelectItem>
+                                      ))
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name={`materials.${index}.stage`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Production Stage</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={"Testing"} disabled>
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Testing" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="Testing">Testing</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name={`materials.${index}.quantity`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>
+                                  Quantity {selectedMaterial && `(${selectedMaterial.unit})`}
+                                </FormLabel>
+                                <FormControl>
+                                  <Input type="number" placeholder="0" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon"
+                          onClick={() => remove(index)}
+                          className="flex-shrink-0"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    append({
+                      materialId: "",
+                      quantity: quantityToBuild,
+                      stage: "Testing",
+                      materialType: "assembled",
+                    })
+                  }
+                >
+                  <PlusCircle className="mr-2 h-4 w-4" /> Add Assembled Item
+                </Button>
+              </div>
+            )}
           </>
         )}
 
