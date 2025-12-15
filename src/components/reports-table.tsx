@@ -45,6 +45,115 @@ function formatHuman(d: Date) {
   }).format(d)
 }
 
+const STAGES: Array<keyof Batch["processingStages"]> = [
+  "Molding",
+  "Machining",
+  "Assembling",
+  "Testing",
+]
+
+function getFinalStage(batch: Batch): string | undefined {
+  const s = batch.processingStages || ({} as Batch["processingStages"])
+  if (s?.Testing?.completed) return "Testing"
+  if (s?.Machining?.completed) return "Machining"
+  if (s?.Assembling?.completed) return "Assembling"
+  if (s?.Molding?.completed) return "Molding"
+  return undefined
+}
+
+// Calculate Raw Material Input per stage = accepted_at_stage × sum(bom_per_unit for materials in that stage)
+function calculateRawMaterialInputPerStage(batch: Batch): Record<string, number> {
+  const res: Record<string, number> = {}
+  const qtyToBuild = Number(batch.quantityToBuild || 0)
+  for (const stage of STAGES) {
+    const stageData = batch.processingStages?.[stage]
+    if (!stageData) continue
+    const accepted = Number(stageData.accepted || 0)
+    if (!accepted || !isFinite(accepted)) continue
+    const matsInStage = (batch.materials || []).filter((m) => m.stage === stage)
+    let sumBomPerUnit = 0
+    if (qtyToBuild > 0) {
+      for (const m of matsInStage) {
+        sumBomPerUnit += Number(m.quantity || 0) / qtyToBuild
+      }
+    }
+    const value = accepted * sumBomPerUnit
+    if (value > 0) res[stage] = Math.round(value * 100) / 100
+  }
+  return res
+}
+
+// Actual consumption per stage comes directly from processingStages[stage].actualConsumption
+function calculateActualConsumptionPerStage(batch: Batch): Record<string, number> {
+  const res: Record<string, number> = {}
+  for (const stage of STAGES) {
+    const stageData = batch.processingStages?.[stage]
+    if (!stageData) continue
+    const v = Number(stageData.actualConsumption || 0)
+    if (v > 0) res[stage] = Math.round(v * 100) / 100
+  }
+  return res
+}
+
+function formatStageMap(values: Record<string, number>): string {
+  const entries = Object.entries(values)
+    .filter(([, v]) => v > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v.toFixed(2)}`)
+  return entries.length > 0 ? entries.join(" | ") : "-"
+}
+
+// Per-material Raw Material Input = accepted_at_material_stage × (bom_per_unit for that material)
+function calculateRawMaterialInputPerMaterial(batch: Batch): Record<string, number> {
+  const res: Record<string, number> = {}
+  const qtyToBuild = Number(batch.quantityToBuild || 0)
+  for (const material of batch.materials || []) {
+    const stage = material.stage as keyof Batch["processingStages"]
+    const stageData = batch.processingStages?.[stage]
+    if (!stageData) continue
+    const accepted = Number(stageData.accepted || 0)
+    if (!accepted || !isFinite(accepted)) continue
+    const bomPerUnit = qtyToBuild > 0 ? Number(material.quantity || 0) / qtyToBuild : 0
+    const value = accepted * bomPerUnit
+    if (value > 0) res[material.name] = Math.round(value * 100) / 100
+  }
+  return res
+}
+
+// Per-material Actual Consumption, using explicit per-material consumptions if present, otherwise proportional split
+function calculateActualConsumptionPerMaterial(batch: Batch): Record<string, number> {
+  const res: Record<string, number> = {}
+  for (const material of batch.materials || []) {
+    const stage = material.stage as keyof Batch["processingStages"]
+    const stageData = batch.processingStages?.[stage]
+    if (!stageData) continue
+    const materialConsumptions = (stageData as any)?.materialConsumptions as Record<string, number> | undefined
+    let actualConsumption = 0
+    if (materialConsumptions && materialConsumptions[material.id]) {
+      actualConsumption = Number(materialConsumptions[material.id]) || 0
+    } else {
+      const materialsInStage = (batch.materials || []).filter((m) => m.stage === stage)
+      const totalPlannedForStage = materialsInStage.reduce((sum, m) => sum + Number(m.quantity || 0), 0)
+      if (totalPlannedForStage > 0) {
+        const materialRatio = Number(material.quantity || 0) / totalPlannedForStage
+        actualConsumption = (Number(stageData.actualConsumption) || 0) * materialRatio
+      } else {
+        actualConsumption = Number(stageData.actualConsumption) || 0
+      }
+    }
+    if (actualConsumption > 0) res[material.name] = Math.round(actualConsumption * 100) / 100
+  }
+  return res
+}
+
+function formatMaterialMap(values: Record<string, number>): string {
+  const entries = Object.entries(values)
+    .filter(([, v]) => v > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, value]) => `${name}=${value.toFixed(2)}`)
+  return entries.length > 0 ? entries.join(" | ") : "-"
+}
+
 // Calculate raw material wastage for a batch
 function calculateRawMaterialWastage(batch: Batch): Record<string, number> {
   const wastage: Record<string, number> = {}
@@ -93,12 +202,12 @@ function calculateRawMaterialWastage(batch: Batch): Record<string, number> {
 
 // Format raw material wastage as a string: raw1=10 | raw2=7 | raw3=5
 function formatRawMaterialWastage(wastage: Record<string, number>): string {
-  const entries = Object.entries(wastage)
-    .filter(([_, value]) => value > 0) // Only show materials with wastage > 0
-    .sort(([a], [b]) => a.localeCompare(b)) // Sort alphabetically
-    .map(([name, value]) => `${name}=${value.toFixed(2)}`)
-  
-  return entries.length > 0 ? entries.join(" | ") : "-"
+  const entriesRaw = Object.entries(wastage)
+  if (entriesRaw.length === 0) return "-"
+  const entries = entriesRaw
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, value]) => `${name}=${Number(value || 0).toFixed(2)}`)
+  return entries.join(" | ")
 }
 
 export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
@@ -161,6 +270,8 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
       "Product",
       "Status",
       "Produced Units",
+      "Raw Material Input (per material)",
+      "Actual Consumption (per material)",
       "Raw Material Wastage",
       "Molding Time (HH:MM:SS)",
       "Machining Time (HH:MM:SS)",
@@ -171,13 +282,18 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
     for (const r of filtered) {
       const d = toRowDate(r)
       const dur = r.durations || {}
+      const finalStage = getFinalStage(r.batch)
+      const rawInputPerMaterial = formatMaterialMap(calculateRawMaterialInputPerMaterial(r.batch))
+      const actualPerMaterial = formatMaterialMap(calculateActualConsumptionPerMaterial(r.batch))
       const wastageString = formatRawMaterialWastage(r.rawMaterialWastage)
       const row = [
         formatYMD(d),
         r.batchId,
-        r.productName.replaceAll(",", " "),
+        `${finalStage ? `${finalStage} - ` : ""}${r.productName}`.replaceAll(",", " "),
         r.status,
         String(r.producedUnits ?? 0),
+        `"${rawInputPerMaterial}"`,
+        `"${actualPerMaterial}"`,
         `"${wastageString}"`, // Quote to handle pipe characters in CSV
         dur.Molding != null ? formatMsToHMS(dur.Molding) : "",
         dur.Machining != null ? formatMsToHMS(dur.Machining) : "",
@@ -205,7 +321,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
     setBatchQuery("")
   }
 
-  const totalColumns = 10 // Date, Batch ID, Product, Status, Produced Units, Raw Material Wastage, 4 time columns
+  const totalColumns = 7 // Date, Batch ID, Product, Produced Units, Raw Material Input, Actual Consumption, Raw Material Wastage
 
   return (
     <div className="space-y-4">
@@ -241,20 +357,22 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
         </div>
       </div>
 
-      <div className="rounded-lg border bg-card overflow-x-auto">
+      <div className="flex rounded-lg border bg-card overflow-x-auto text-center">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Batch ID</TableHead>
-              <TableHead>Product</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Produced Units</TableHead>
-              <TableHead>Raw Material Wastage</TableHead>
-              <TableHead className="text-right">Molding Time</TableHead>
+              <TableHead className="text-center font-medium">Date</TableHead>
+              <TableHead className="text-center font-medium">Batch ID</TableHead>
+              <TableHead className="text-center font-medium">Product</TableHead>
+              {/* <TableHead>Status</TableHead> */}
+              <TableHead className="text-center font-medium">Produced Units</TableHead>
+              <TableHead>Raw Material Input</TableHead>
+              <TableHead>Actual Consumption</TableHead>
+              <TableHead >Raw Material Wastage</TableHead>
+              {/* <TableHead className="text-right">Molding Time</TableHead>
               <TableHead className="text-right">Machining Time</TableHead>
               <TableHead className="text-right">Assembling Time</TableHead>
-              <TableHead className="text-right">Testing Time</TableHead>
+              <TableHead className="text-right">Testing Time</TableHead> */}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -268,16 +386,21 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
               filtered.map((r) => {
                 const d = toRowDate(r)
                 const dur = r.durations || {}
+                const finalStage = getFinalStage(r.batch)
+                const rawInputPerMaterial = formatMaterialMap(calculateRawMaterialInputPerMaterial(r.batch))
+                const actualPerMaterial = formatMaterialMap(calculateActualConsumptionPerMaterial(r.batch))
                 const wastageString = formatRawMaterialWastage(r.rawMaterialWastage)
                 return (
                   <TableRow key={`${r.batchId}-${formatYMD(d)}`}>
                     <TableCell>{formatHuman(d)}</TableCell>
                     <TableCell className="font-mono text-sm">{r.batchId}</TableCell>
-                    <TableCell>{r.productName}</TableCell>
-                    <TableCell>{r.status}</TableCell>
-                    <TableCell className="text-right font-medium">{formatNumber(r.producedUnits || 0)}</TableCell>
-                    <TableCell className="font-mono text-sm">{wastageString}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell>{finalStage ? `${finalStage} - ` : ""}{r.productName}</TableCell>
+                    {/* <TableCell>{r.status}</TableCell> */}
+                    <TableCell className="text-center font-medium">{formatNumber(r.producedUnits || 0)}</TableCell>
+                    <TableCell className="text-left font-mono text-sm">{rawInputPerMaterial}</TableCell>
+                    <TableCell className="text-left font-mono text-sm">{actualPerMaterial}</TableCell>
+                    <TableCell className="text-left font-mono text-sm">{wastageString}</TableCell>
+                    {/* <TableCell className="text-right">
                       {dur.Molding != null ? formatMsToHMS(dur.Molding) : "-"}
                     </TableCell>
                     <TableCell className="text-right">
@@ -288,7 +411,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
                     </TableCell>
                     <TableCell className="text-right">
                       {dur.Testing != null ? formatMsToHMS(dur.Testing) : "-"}
-                    </TableCell>
+                    </TableCell> */}
                   </TableRow>
                 )
               })

@@ -104,12 +104,12 @@ export default function ProductionReportsPage() {
         producedUnits,
         rejectedUnits,
         rawMaterialWastage,
-        durations: {
-          Molding: moldingDone ? durationBetween(s?.Molding?.startedAt, s?.Molding?.finishedAt) : undefined,
-          Machining: finishingDone ? durationBetween(s?.Machining?.startedAt, s?.Machining?.finishedAt) : undefined,
-          Assembling: assemblingDone ? durationBetween(s?.Assembling?.startedAt, s?.Assembling?.finishedAt) : undefined,
-          Testing: testingDone ? durationBetween(s?.Testing?.startedAt, s?.Testing?.finishedAt) : undefined,
-        },
+        // durations: {
+        //   Molding: moldingDone ? durationBetween(s?.Molding?.startedAt, s?.Molding?.finishedAt) : undefined,
+        //   Machining: finishingDone ? durationBetween(s?.Machining?.startedAt, s?.Machining?.finishedAt) : undefined,
+        //   Assembling: assemblingDone ? durationBetween(s?.Assembling?.startedAt, s?.Assembling?.finishedAt) : undefined,
+        //   Testing: testingDone ? durationBetween(s?.Testing?.startedAt, s?.Testing?.finishedAt) : undefined,
+        // },
         batch: b, // Pass full batch for reference
       }
     })

@@ -1,17 +1,23 @@
 "use client"
 
-import { useState } from "react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { AlertCircle, CheckCircle2 } from "lucide-react"
 import type { ProcessingStageName } from "@/lib/types"
+import { BOMEditor } from "@/components/bom-editor"
 
 interface ManufacturingStagesSelectorProps {
   selectedStages: ProcessingStageName[]
   onStagesChange: (stages: ProcessingStageName[]) => void
   disabled?: boolean
+  // Embed BOM props
+  bomRows?: import("@/lib/types").BOMRow[]
+  onBOMChange?: (rows: import("@/lib/types").BOMRow[]) => void
+  productName?: string
+  unitThresholds?: { moulded?: number; machined?: number; assembled?: number }
+  onUnitThresholdsChange?: (t: { moulded?: number; machined?: number; assembled?: number }) => void
 }
 
 const MANUFACTURING_STAGES: { name: ProcessingStageName; label: string; description: string }[] = [
@@ -40,7 +46,12 @@ const MANUFACTURING_STAGES: { name: ProcessingStageName; label: string; descript
 export function ManufacturingStagesSelector({ 
   selectedStages, 
   onStagesChange, 
-  disabled = false 
+  disabled = false,
+  bomRows = [],
+  onBOMChange,
+  productName = "",
+  unitThresholds,
+  onUnitThresholdsChange,
 }: ManufacturingStagesSelectorProps) {
   const handleStageToggle = (stage: ProcessingStageName, checked: boolean) => {
     if (disabled) return
@@ -83,8 +94,8 @@ export function ManufacturingStagesSelector({
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Stage Selection */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Stage Selection - full width rows */}
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
           {MANUFACTURING_STAGES.map((stage) => {
             const isSelected = selectedStages.includes(stage.name)
             const stageOrder = isSelected ? getStageOrder(stage.name) : null
@@ -92,37 +103,56 @@ export function ManufacturingStagesSelector({
             return (
               <div
                 key={stage.name}
-                className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors ${
+                className={`p-3 rounded-lg border transition-colors ${
                   isSelected 
                     ? "bg-primary/5 border-primary/20" 
                     : "bg-muted/30 border-muted-foreground/20"
                 } ${disabled ? "opacity-50" : "hover:bg-muted/50"}`}
               >
-                <Checkbox
-                  id={stage.name}
-                  checked={isSelected}
-                  onCheckedChange={(checked) => handleStageToggle(stage.name, checked as boolean)}
-                  disabled={disabled}
-                  className="mt-1"
-                />
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Label 
-                      htmlFor={stage.name} 
-                      className={`font-medium cursor-pointer ${disabled ? "cursor-not-allowed" : ""}`}
-                    >
-                      {stage.label}
-                    </Label>
-                    {isSelected && stageOrder && (
-                      <Badge variant="secondary" className="text-xs">
-                        Step {stageOrder}
-                      </Badge>
-                    )}
+                <div className="flex items-start space-x-3">
+                  <Checkbox
+                    id={stage.name}
+                    checked={isSelected}
+                    onCheckedChange={(checked) => handleStageToggle(stage.name, checked as boolean)}
+                    disabled={disabled}
+                    className="mt-1"
+                  />
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label 
+                        htmlFor={stage.name} 
+                        className={`font-medium cursor-pointer ${disabled ? "cursor-not-allowed" : ""}`}
+                      >
+                        {stage.label}
+                      </Label>
+                      {isSelected && stageOrder && (
+                        <Badge variant="secondary" className="text-xs">
+                          Step {stageOrder}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {stage.description}
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {stage.description}
-                  </p>
                 </div>
+
+                {/* Scoped BOM inside selected process card for production stages */}
+                {isSelected && onBOMChange && ["Molding", "Machining", "Assembling"].includes(stage.name) && (
+                  <div className="mt-4">
+                    <BOMEditor
+                      bomRows={bomRows}
+                      onBOMChange={onBOMChange}
+                      productName={productName}
+                      selectedStages={selectedStages}
+                      unitThresholds={unitThresholds}
+                      onUnitThresholdsChange={onUnitThresholdsChange}
+                      scopeStage={stage.name}
+                      hideHeader
+                      addButtonLabel={`Add Material for ${stage.label}`}
+                    />
+                  </div>
+                )}
               </div>
             )
           })}

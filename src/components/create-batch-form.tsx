@@ -179,25 +179,22 @@ export function CreateBatchForm({ onBatchCreated, initialProductId, initialStage
           selectedProcesses.includes(bomRow.stage),
         );
 
-        // Convert filtered BOM to materials format with proper material type detection
+        // Convert filtered BOM to materials format; support Final Stock inputs
         const bomMaterials = filteredBOM.map((bomRow) => {
-          // Find the material to determine its type
-          const material = rawMaterials.find((m) => m.id === bomRow.raw_material_id);
-          
-          // Determine material type based on material properties
+          const isFinal = (bomRow as any).source === "final";
+          // Determine material type for UI grouping; keep as 'raw' for final inputs so they appear in Raw Materials section
           let materialType: "raw" | "moulded" | "finished" | "assembled" = "raw";
-          if (material) {
-            if (material.isFinished) {
-              materialType = "finished";
-            } else if (material.isMoulded) {
-              materialType = "moulded";
-            } else if (material.isAssembled) {
-              materialType = "assembled";
+          if (!isFinal) {
+            const material = rawMaterials.find((m) => m.id === bomRow.raw_material_id);
+            if (material) {
+              if (material.isFinished) materialType = "finished";
+              else if (material.isMoulded) materialType = "moulded";
+              else if (material.isAssembled) materialType = "assembled";
             }
           }
 
           return {
-            materialId: bomRow.raw_material_id,
+            materialId: bomRow.raw_material_id, // may be raw material id or final stock id
             quantity: bomRow.qty_per_piece * quantityToBuild,
             stage: bomRow.stage,
             materialType,
@@ -276,16 +273,22 @@ export function CreateBatchForm({ onBatchCreated, initialProductId, initialStage
       return;
     }
 
-    // Inventory Check
+    // Inventory Check (supports Raw Materials and Final Stock inputs)
     for (const material of values.materials) {
-      const stockItem = rawMaterials.find(
-        (rm) => rm.id === material.materialId,
-      );
-      if (!stockItem || stockItem.quantity < material.quantity) {
+      const stockItemRaw = rawMaterials.find((rm) => rm.id === material.materialId);
+      const stockItemFinal = finalStock.find((p) => p.id === material.materialId);
+      const stockItem = stockItemRaw || stockItemFinal;
+      const availableFinal = stockItemFinal
+        ? ((stockItemFinal.batches && stockItemFinal.batches.length > 0)
+            ? stockItemFinal.batches.reduce((sum, b) => sum + Number(b.quantity || 0), 0)
+            : Number(stockItemFinal.quantity || 0))
+        : undefined;
+      const available = Number((stockItemRaw?.quantity ?? availableFinal) || 0);
+      if (!stockItem || available < material.quantity) {
         toast({
           variant: "destructive",
           title: "Insufficient Stock",
-          description: `Not enough ${stockItem?.name || "material"}. Required: ${material.quantity}, Available: ${stockItem?.quantity || 0}.`,
+          description: `Not enough ${(stockItemRaw?.name || stockItemFinal?.name) || "material"}. Required: ${material.quantity}, Available: ${available}.`,
         });
         setIsSubmitting(false);
         return;
@@ -304,12 +307,15 @@ export function CreateBatchForm({ onBatchCreated, initialProductId, initialStage
     }
 
     const selectedMaterials = values.materials.map((mat) => {
-      const material = rawMaterials.find((m) => m.id === mat.materialId);
+      const materialRaw = rawMaterials.find((m) => m.id === mat.materialId);
+      const materialFinal = finalStock.find((p) => p.id === mat.materialId);
+      const item = materialRaw || materialFinal!;
+      const unit = (materialRaw?.unit as string | undefined) || "pcs";
       return {
-        id: material!.id,
-        name: material!.name,
+        id: item!.id,
+        name: item!.name,
         quantity: mat.quantity,
-        unit: material!.unit,
+        unit,
         stage: mat.stage,
       };
     });
@@ -698,9 +704,11 @@ export function CreateBatchForm({ onBatchCreated, initialProductId, initialStage
               )
               .map((field, arrayIndex) => {
                 const index = fields.indexOf(field);
+                const selectedId = form.watch(`materials.${index}.materialId`);
                 const selectedMaterial = rawMaterials.find(
-                  (m) => m.id === form.watch(`materials.${index}.materialId`),
+                  (m) => m.id === selectedId,
                 );
+                const selectedFinal = finalStock.find((p) => p.id === selectedId);
 
                 return (
                   <div
@@ -729,15 +737,23 @@ export function CreateBatchForm({ onBatchCreated, initialProductId, initialStage
                                     No raw materials available
                                   </div>
                                 ) : (
-                                  regularMaterials.map((material) => (
-                                    <SelectItem
-                                      key={material.id}
-                                      value={material.id}
-                                    >
-                                      {material.name} (In Stock:{" "}
-                                      {material.quantity.toLocaleString()})
-                                    </SelectItem>
-                                  ))
+                                  <>
+                                    {regularMaterials.map((material) => (
+                                      <SelectItem
+                                        key={material.id}
+                                        value={material.id}
+                                      >
+                                        {material.name} (In Stock:{" "}
+                                        {material.quantity.toLocaleString()})
+                                      </SelectItem>
+                                    ))}
+                                    {/* If selected is a Final Stock ID, inject a label so Select shows the name instead of ID */}
+                                    {selectedFinal && !regularMaterials.some((m) => m.id === selectedId) && (
+                                      <SelectItem key={selectedId} value={selectedId}>
+                                        {selectedFinal.name} (Final Stock)
+                                      </SelectItem>
+                                    )}
+                                  </>
                                 )}
                               </SelectContent>
                             </Select>

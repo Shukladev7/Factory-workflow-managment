@@ -15,11 +15,12 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { BOMEditor } from "@/components/bom-editor";
 import { ImageUpload } from "@/components/image-upload";
 import { ManufacturingStagesSelector } from "@/components/manufacturing-stages-selector";
+import { BOMEditor } from "@/components/bom-editor";
 import { uploadImage, deleteImage } from "@/lib/firebase/storage";
 import { useToast } from "@/hooks/use-toast";
+import { useRawMaterials } from "@/hooks/use-raw-materials";
 
 import type { FinalStock, BOMRow, ProcessingStageName } from "@/lib/types";
 
@@ -52,6 +53,7 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
     assembled: product.assembledThreshold ?? 0,
   });
   const { toast } = useToast();
+  const { createRawMaterial, mouldedMaterials, finishedMaterials, assembledMaterials } = useRawMaterials();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -143,33 +145,80 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
     }
   };
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    // Validate manufacturing stages selection
-    if (manufacturingStages.length === 0) {
-      form.setError("root", {
-        type: "manual",
-        message: "Please select at least one manufacturing stage."
-      });
-      return;
-    }
-
-    // keep only valid BOM rows
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    // keep only valid BOM rows (no stage enforcement)
     const validBomRows = bomRows.filter(
       (r) => r.raw_material_id && r.stage && Number(r.qty_per_piece) > 0,
     );
+    // No validation/enforcement that BOM stages match selected manufacturing stages
 
-    // Check if BOM entries are only for selected stages
-    const invalidBomRows = validBomRows.filter(
-      (row) => !manufacturingStages.includes(row.stage)
+    // Determine product-level unit intents from BOM rows
+    const MOULDED_PLACEHOLDER = "__MOULDED_UNIT__";
+    const MACHINED_PLACEHOLDER = "__MACHINED_UNIT__";
+    const ASSEMBLED_PLACEHOLDER = "__ASSEMBLED_UNIT__";
+
+    const wantMoulded = validBomRows.some(
+      (r) => r.stage === "Machining" && (r.raw_material_id === MOULDED_PLACEHOLDER || mouldedMaterials.some((m) => m.id === r.raw_material_id))
+    );
+    const wantMachined = validBomRows.some(
+      (r) => r.stage === "Assembling" && (r.raw_material_id === MACHINED_PLACEHOLDER || finishedMaterials.some((m) => m.id === r.raw_material_id))
+    );
+    const wantAssembled = validBomRows.some(
+      (r) => r.stage === "Testing" && (r.raw_material_id === ASSEMBLED_PLACEHOLDER || assembledMaterials.some((m) => m.id === r.raw_material_id))
     );
 
-    if (invalidBomRows.length > 0) {
-      form.setError("root", {
-        type: "manual",
-        message: `BOM entries found for unselected stages: ${invalidBomRows.map(r => r.stage).join(", ")}. Please remove these entries or select the corresponding stages.`
+    // Find or create materials on save
+    let mouldedId: string | undefined = product.mouldedMaterialId || mouldedMaterials.find((m) => m.name === `Moulded ${values.name}`)?.id;
+    let machinedId: string | undefined = product.machinedMaterialId || finishedMaterials.find((m) => m.name === `Machined ${values.name}`)?.id;
+    let assembledId: string | undefined = product.assembledMaterialId || assembledMaterials.find((m) => m.name === `Assembled ${values.name}`)?.id;
+
+    if (wantMoulded && !mouldedId) {
+      mouldedId = await createRawMaterial({
+        name: `Moulded ${values.name}`,
+        sku: `M-${values.name}`,
+        quantity: 0,
+        unit: "pcs",
+        threshold: unitThresholds.moulded ?? 0,
+        isMoulded: true,
+        isFinished: false,
+        createdAt: new Date().toISOString(),
       });
-      return;
     }
+
+    if (wantMachined && !machinedId) {
+      machinedId = await createRawMaterial({
+        name: `Machined ${values.name}`,
+        sku: `F-${values.name}`,
+        quantity: 0,
+        unit: "pcs",
+        threshold: unitThresholds.machined ?? 0,
+        isMoulded: false,
+        isFinished: true,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    if (wantAssembled && !assembledId) {
+      assembledId = await createRawMaterial({
+        name: `Assembled ${values.name}`,
+        sku: `A-${values.name}`,
+        quantity: 0,
+        unit: "pcs",
+        threshold: unitThresholds.assembled ?? 0,
+        isMoulded: false,
+        isFinished: false,
+        isAssembled: true,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // Replace placeholders in BOM rows with actual created IDs
+    const adjustedBomRows = validBomRows.map((r) => {
+      if (r.raw_material_id === MOULDED_PLACEHOLDER && mouldedId) return { ...r, raw_material_id: mouldedId };
+      if (r.raw_material_id === MACHINED_PLACEHOLDER && machinedId) return { ...r, raw_material_id: machinedId };
+      if (r.raw_material_id === ASSEMBLED_PLACEHOLDER && assembledId) return { ...r, raw_material_id: assembledId };
+      return r;
+    });
 
     const updatedProduct: FinalStock = {
       // start from existing product so we keep any other fields
@@ -186,15 +235,17 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
       mouldedThreshold: unitThresholds.moulded ?? 0,
       machinedThreshold: unitThresholds.machined ?? 0,
       assembledThreshold: unitThresholds.assembled ?? 0,
+      mouldedMaterialId: mouldedId,
+      machinedMaterialId: machinedId,
+      assembledMaterialId: assembledId,
       imageUrl:
         values.imageUrl && values.imageUrl.length > 0
           ? values.imageUrl
-          : product.imageUrl ??
-            `https://picsum.photos/seed/${values.id ?? "product"}/400/300`,
+          : product.imageUrl ?? "/placeholder.svg",
       imageHint: values.imageHint ?? product.imageHint,
       measurementSketch: values.measurementSketch ?? product.measurementSketch,
       // attach bom_per_piece only if valid rows exist
-      bom_per_piece: validBomRows.length > 0 ? validBomRows : undefined,
+      bom_per_piece: adjustedBomRows.length > 0 ? adjustedBomRows : undefined,
     };
 
     onProductUpdated(updatedProduct);
@@ -339,21 +390,28 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
           )}
         />
 
-        {/* Manufacturing Stages Selector */}
+        {/* Product-Level Options (moulded/machined/assembled unit checkboxes) */}
+        <div className="border-t pt-6">
+          <BOMEditor
+            bomRows={bomRows}
+            onBOMChange={setBomRows}
+            productName={form.watch("name")}
+            selectedStages={manufacturingStages}
+            unitThresholds={unitThresholds}
+            onUnitThresholdsChange={setUnitThresholds}
+            showOnlyProductOptions
+            hideHeader
+          />
+        </div>
+
+        {/* Manufacturing Stages Selector with embedded stage-scoped BOM */}
         <div className="border-t pt-6">
           <ManufacturingStagesSelector
             selectedStages={manufacturingStages}
             onStagesChange={setManufacturingStages}
-          />
-        </div>
-
-        {/* BOM Editor */}
-        <div className="border-t pt-6">
-          <BOMEditor 
-            bomRows={bomRows} 
+            bomRows={bomRows}
             onBOMChange={setBomRows}
             productName={form.watch("name")}
-            selectedStages={manufacturingStages}
             unitThresholds={unitThresholds}
             onUnitThresholdsChange={setUnitThresholds}
           />

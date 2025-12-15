@@ -16,12 +16,13 @@ import { Input } from "@/components/ui/input";
 import type { FinalStock, BOMRow, ProcessingStageName } from "@/lib/types";
 import { useEffect, useState } from "react";
 import { PlaceHolderImages } from "@/lib/placeholder-images";
-import { BOMEditor } from "@/components/bom-editor";
 import { ImageUpload } from "@/components/image-upload";
+import { BOMEditor } from "@/components/bom-editor";
 import { ManufacturingStagesSelector } from "@/components/manufacturing-stages-selector";
 import { Checkbox } from "@/components/ui/checkbox";
 import { uploadImage, deleteImage } from "@/lib/firebase/storage";
 import { useToast } from "@/hooks/use-toast";
+import { useRawMaterials } from "@/hooks/use-raw-materials";
 
 const formSchema = z.object({
   productId: z.string().min(1, "Please enter a Product ID."),
@@ -47,6 +48,7 @@ export function CreateProductForm({
   const [manufacturingStages, setManufacturingStages] = useState<ProcessingStageName[]>([]);
   const [unitThresholds, setUnitThresholds] = useState<{ moulded?: number; machined?: number; assembled?: number }>({});
   const { toast } = useToast();
+  const { createRawMaterial, mouldedMaterials, finishedMaterials, assembledMaterials } = useRawMaterials();
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -113,62 +115,111 @@ export function CreateProductForm({
     }
   };
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     const { hasManufacturingDetails } = values;
 
     let validBomRows: BOMRow[] = [];
 
     if (hasManufacturingDetails) {
-      // Validate manufacturing stages selection
-      if (manufacturingStages.length === 0) {
-        form.setError("root", {
-          type: "manual",
-          message: "Please select at least one manufacturing stage.",
-        });
-        return;
-      }
-
-      // Validate BOM rows against selected stages
       validBomRows = bomRows.filter(
         (row) => row.raw_material_id && row.stage && row.qty_per_piece > 0,
       );
-
-      // Check if BOM entries are only for selected stages
-      const invalidBomRows = validBomRows.filter(
-        (row) => !manufacturingStages.includes(row.stage),
-      );
-
-      if (invalidBomRows.length > 0) {
-        form.setError("root", {
-          type: "manual",
-          message: `BOM entries found for unselected stages: ${invalidBomRows
-            .map((r) => r.stage)
-            .join(", ")}. Please remove these entries or select the corresponding stages.`,
-        });
-        return;
-      }
     }
 
     const measurementSketch = form.getValues("measurementSketch" as any) as
       | string
       | undefined;
 
+    // Determine product-level unit intents from BOM rows
+    const MOULDED_PLACEHOLDER = "__MOULDED_UNIT__";
+    const MACHINED_PLACEHOLDER = "__MACHINED_UNIT__";
+    const ASSEMBLED_PLACEHOLDER = "__ASSEMBLED_UNIT__";
+
+    const wantMoulded = validBomRows.some(
+      (r) => r.stage === "Machining" && (r.raw_material_id === MOULDED_PLACEHOLDER || mouldedMaterials.some((m) => m.id === r.raw_material_id))
+    );
+    const wantMachined = validBomRows.some(
+      (r) => r.stage === "Assembling" && (r.raw_material_id === MACHINED_PLACEHOLDER || finishedMaterials.some((m) => m.id === r.raw_material_id))
+    );
+    const wantAssembled = validBomRows.some(
+      (r) => r.stage === "Testing" && (r.raw_material_id === ASSEMBLED_PLACEHOLDER || assembledMaterials.some((m) => m.id === r.raw_material_id))
+    );
+
+    // Create missing materials based on intent
+    let mouldedId: string | undefined = mouldedMaterials.find((m) => m.name === `Moulded ${values.name}`)?.id;
+    let machinedId: string | undefined = finishedMaterials.find((m) => m.name === `Machined ${values.name}`)?.id;
+    let assembledId: string | undefined = assembledMaterials.find((m) => m.name === `Assembled ${values.name}`)?.id;
+
+    if (wantMoulded && !mouldedId) {
+      mouldedId = await createRawMaterial({
+        name: `Moulded ${values.name}`,
+        sku: `M-${values.name}`,
+        quantity: 0,
+        unit: "pcs",
+        threshold: unitThresholds.moulded ?? 0,
+        isMoulded: true,
+        isFinished: false,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    if (wantMachined && !machinedId) {
+      machinedId = await createRawMaterial({
+        name: `Machined ${values.name}`,
+        sku: `F-${values.name}`,
+        quantity: 0,
+        unit: "pcs",
+        threshold: unitThresholds.machined ?? 0,
+        isMoulded: false,
+        isFinished: true,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    if (wantAssembled && !assembledId) {
+      assembledId = await createRawMaterial({
+        name: `Assembled ${values.name}`,
+        sku: `A-${values.name}`,
+        quantity: 0,
+        unit: "pcs",
+        threshold: unitThresholds.assembled ?? 0,
+        isMoulded: false,
+        isFinished: false,
+        isAssembled: true,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // Replace placeholders in BOM rows with actual created IDs
+    const adjustedBomRows = validBomRows.map((r) => {
+      if (r.raw_material_id === MOULDED_PLACEHOLDER && mouldedId) return { ...r, raw_material_id: mouldedId };
+      if (r.raw_material_id === MACHINED_PLACEHOLDER && machinedId) return { ...r, raw_material_id: machinedId };
+      if (r.raw_material_id === ASSEMBLED_PLACEHOLDER && assembledId) return { ...r, raw_material_id: assembledId };
+      return r;
+    });
+    // Ensure no undefined fields exist in BOM rows for Firestore
+    const sanitizedBomRows = adjustedBomRows.map(({ raw_material_id, stage, qty_per_piece, unit, notes, source }) => {
+      const row: any = { raw_material_id, stage, qty_per_piece, unit };
+      if (typeof notes === "string" && notes.length > 0) row.notes = notes;
+      if (source) row.source = source;
+      return row;
+    });
+
     // Note: id will be generated by Firestore when document is created
     const newProduct: FinalStock = {
-      id: "", // Temporary - will be replaced by Firestore-generated ID
+      id: "",
       ...values,
       manufacturingStages: hasManufacturingDetails ? manufacturingStages : [],
-      imageUrl:
-        values.imageUrl || `https://picsum.photos/seed/${values.name}/400/300`,
+      imageUrl: values.imageUrl || "/placeholder.svg",
       measurementSketch,
-      bom_per_piece:
-        hasManufacturingDetails && validBomRows.length > 0
-          ? validBomRows
-          : undefined,
+      ...(hasManufacturingDetails && sanitizedBomRows.length > 0 ? { bom_per_piece: sanitizedBomRows } : {}),
       mouldedThreshold: unitThresholds.moulded ?? 0,
       machinedThreshold: unitThresholds.machined ?? 0,
       assembledThreshold: unitThresholds.assembled ?? 0,
-      batches: [], // Initialize with empty batches array
+      ...(mouldedId ? { mouldedMaterialId: mouldedId } : {}),
+      ...(machinedId ? { machinedMaterialId: machinedId } : {}),
+      ...(assembledId ? { assembledMaterialId: assembledId } : {}),
+      batches: [],
       createdAt: new Date().toISOString(),
     };
     onProductCreated(newProduct);
@@ -334,21 +385,28 @@ export function CreateProductForm({
 
           {hasManufacturingDetails && (
             <>
-              {/* Manufacturing Stages Selector */}
-              <div className="border-t pt-6">
-                <ManufacturingStagesSelector
-                  selectedStages={manufacturingStages}
-                  onStagesChange={setManufacturingStages}
-                />
-              </div>
-
-              {/* BOM Editor */}
+              {/* Product-Level Options (moulded/machined/assembled unit checkboxes) */}
               <div className="border-t pt-6">
                 <BOMEditor
                   bomRows={bomRows}
                   onBOMChange={setBomRows}
                   productName={form.watch("name")}
                   selectedStages={manufacturingStages}
+                  unitThresholds={unitThresholds}
+                  onUnitThresholdsChange={setUnitThresholds}
+                  showOnlyProductOptions
+                  hideHeader
+                />
+              </div>
+
+              {/* Manufacturing Stages Selector */}
+              <div className="border-t pt-6">
+                <ManufacturingStagesSelector
+                  selectedStages={manufacturingStages}
+                  onStagesChange={setManufacturingStages}
+                  bomRows={bomRows}
+                  onBOMChange={setBomRows}
+                  productName={form.watch("name")}
                   unitThresholds={unitThresholds}
                   onUnitThresholdsChange={setUnitThresholds}
                 />

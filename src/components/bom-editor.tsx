@@ -7,9 +7,18 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Trash2, PlusCircle } from "lucide-react"
 import { useRawMaterials } from "@/hooks/use-raw-materials"
-import type { BOMRow, ProcessingStageName } from "@/lib/types"
+import { useFinalStock } from "@/hooks/use-final-stock"
+import type { BOMRow, ProcessingStageName, FinalStock } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+
+  const getFinalStockAvailable = (p: FinalStock): number => {
+    const batchesQty = (p.batches || []).reduce((sum, b) => sum + Number(b.quantity || 0), 0)
+    if ((p.batches && p.batches.length > 0)) {
+      return batchesQty
+    }
+    return Number(p.quantity || 0)
+  }
 
 interface BOMEditorProps {
   bomRows: BOMRow[]
@@ -20,12 +29,23 @@ interface BOMEditorProps {
   selectedStages?: ProcessingStageName[] // Selected manufacturing stages for validation
   unitThresholds?: { moulded?: number; machined?: number; assembled?: number }
   onUnitThresholdsChange?: (t: { moulded?: number; machined?: number; assembled?: number }) => void
+  // Optional: render editor scoped to a single stage (filter rows and default new rows to this stage)
+  scopeStage?: ProcessingStageName
+  // Optional: hide the header section (title/description) for embedded usage
+  hideHeader?: boolean
+  // Optional: hide the Stage column when scopeStage is provided
+  hideStageColumn?: boolean
+  // Optional: custom label for Add button
+  addButtonLabel?: string
+  // Optional: when true, render only the Product-Level Options (no list UI)
+  showOnlyProductOptions?: boolean
 }
 
 const processingStages: ProcessingStageName[] = ["Molding", "Machining", "Assembling", "Testing"]
 
-export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMultiplier = 1, productName = "", selectedStages = [], unitThresholds, onUnitThresholdsChange }: BOMEditorProps) {
-  const { rawMaterials, regularMaterials, mouldedMaterials, finishedMaterials, assembledMaterials, createRawMaterial } = useRawMaterials()
+export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMultiplier = 1, productName = "", selectedStages = [], unitThresholds, onUnitThresholdsChange, scopeStage, hideHeader = false, hideStageColumn = true, addButtonLabel, showOnlyProductOptions = false }: BOMEditorProps) {
+  const { rawMaterials, regularMaterials, mouldedMaterials, finishedMaterials, assembledMaterials } = useRawMaterials()
+  const { finalStock } = useFinalStock()
   const [mouldedUnitRequired, setMouldedUnitRequired] = useState(false)
   const [machinedUnitRequired, setMachinedUnitRequired] = useState(false)
   const [assembledUnitRequired, setAssembledUnitRequired] = useState(false)
@@ -68,24 +88,6 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
       isProcessingRef.current = true
       let materialId = assembledUnitItem?.id
       let materialUnit = assembledUnitItem?.unit || "pcs"
-
-      if (!materialId && productName) {
-        try {
-          materialId = await createRawMaterial({
-            name: `Assembled ${productName}`,
-            sku: `A-${productName}`,
-            quantity: 0,
-            unit: materialUnit,
-            threshold: unitThresholds?.assembled ?? 0,
-            isMoulded: false,
-            isFinished: false,
-            isAssembled: true,
-            createdAt: new Date().toISOString(),
-          })
-        } catch (error) {
-          console.error("[BOMEditor] Failed to create assembled material:", error)
-        }
-      }
 
       const newRow: BOMRow = {
         raw_material_id: materialId || ASSEMBLED_UNIT_ID,
@@ -156,27 +158,9 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
     )
 
     if (checked && !existingMouldedRow) {
-      // Ensure a corresponding moulded material exists in Store
       isProcessingRef.current = true
       let materialId = mouldedUnitItem?.id
       let materialUnit = mouldedUnitItem?.unit || "pcs"
-
-      if (!materialId && productName) {
-        try {
-          materialId = await createRawMaterial({
-            name: `Moulded ${productName}`,
-            sku: `M-${productName}`,
-            quantity: 0,
-            unit: materialUnit,
-            threshold: unitThresholds?.moulded ?? 0,
-            isMoulded: true,
-            isFinished: false,
-            createdAt: new Date().toISOString(),
-          })
-        } catch (error) {
-          console.error("[BOMEditor] Failed to create moulded material:", error)
-        }
-      }
 
       const newRow: BOMRow = {
         raw_material_id: materialId || MOULDED_UNIT_ID,
@@ -218,27 +202,9 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
     )
 
     if (checked && !existingMachinedRow) {
-      // Ensure a corresponding finished (machined) material exists in Store
       isProcessingRef.current = true
       let materialId = machinedUnitItem?.id
       let materialUnit = machinedUnitItem?.unit || "pcs"
-
-      if (!materialId && productName) {
-        try {
-          materialId = await createRawMaterial({
-            name: `Machined ${productName}`,
-            sku: `F-${productName}`,
-            quantity: 0,
-            unit: materialUnit,
-            threshold: unitThresholds?.machined ?? 0,
-            isMoulded: false,
-            isFinished: true,
-            createdAt: new Date().toISOString(),
-          })
-        } catch (error) {
-          console.error("[BOMEditor] Failed to create finished material:", error)
-        }
-      }
 
       const newRow: BOMRow = {
         raw_material_id: materialId || MACHINED_UNIT_ID,
@@ -267,37 +233,64 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
   const addRow = () => {
     const newRow: BOMRow = {
       raw_material_id: "",
-      stage: "Molding",
+      stage: scopeStage || "Molding",
       qty_per_piece: 0,
       unit: "pcs",
       notes: "",
+      source: "raw",
+    }
+    onBOMChange([...bomRows, newRow])
+  }
+
+  const addFinalRow = () => {
+    const newRow: BOMRow = {
+      raw_material_id: "",
+      stage: scopeStage || "Molding",
+      qty_per_piece: 0,
+      unit: "pcs",
+      notes: "",
+      source: "final",
     }
     onBOMChange([...bomRows, newRow])
   }
 
   const updateRow = (index: number, field: keyof BOMRow, value: any) => {
     const updatedRows = [...bomRows]
-    updatedRows[index] = { ...updatedRows[index], [field]: value }
-    
+    const globalIndex = getGlobalIndex(index)
+    updatedRows[globalIndex] = { ...updatedRows[globalIndex], [field]: value }
+
     // Auto-update unit when material is selected
     if (field === "raw_material_id") {
-      const material = rawMaterials.find(m => m.id === value)
-      if (material) {
-        updatedRows[index].unit = material.unit
+      const current = updatedRows[globalIndex]
+      // Detect if selected ID belongs to Final Stock
+      const selectedFinal = finalStock.find(p => p.id === value)
+      if (selectedFinal) {
+        updatedRows[globalIndex].source = "final"
+        // Final stock uses piece units
+        updatedRows[globalIndex].unit = "pcs"
+      } else {
+        const material = rawMaterials.find(m => m.id === value)
+        if (material) {
+          updatedRows[globalIndex].source = "raw"
+          updatedRows[globalIndex].unit = material.unit
+        } else {
+          // Unknown id: keep previous source and unit unchanged
+        }
       }
     }
-    
+
     onBOMChange(updatedRows)
   }
 
   const deleteRow = (index: number) => {
-    const row = bomRows[index]
+    const globalIndex = getGlobalIndex(index)
+    const row = bomRows[globalIndex]
     // Prevent deletion of auto-managed rows (moulded/machined units)
     if (isAutoManagedRow(row)) {
       return // Don't allow manual deletion, must use checkbox
     }
     
-    const updatedRows = bomRows.filter((_, i) => i !== index)
+    const updatedRows = bomRows.filter((_, i) => i !== globalIndex)
     onBOMChange(updatedRows)
   }
 
@@ -322,41 +315,94 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
 
   // Filter out moulded and machined items from the dropdown
   const availableMaterials = regularMaterials
+  const availableFinalStock = finalStock
+
+  // Compute rows to render based on scopeStage
+  const rowsToRender = scopeStage ? bomRows.filter(r => r.stage === scopeStage) : bomRows
+
+  const getGlobalIndex = (localIndex: number): number => {
+    if (!scopeStage) return localIndex
+    const item = rowsToRender[localIndex]
+    return bomRows.indexOf(item)
+  }
+
+  const canAddRow = scopeStage
+    ? selectedStages.includes(scopeStage)
+    : selectedStages.length > 0
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <Label className="text-base font-semibold">Bill of Materials (BOM)</Label>
-          <p className="text-sm text-muted-foreground">
-            Define materials required {quantityMultiplier > 1 ? `for ${quantityMultiplier} pieces` : "per 1 piece"}
-          </p>
-          {selectedStages.length === 0 && (
-            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
-              Please select manufacturing stages first to add BOM entries.
+      {!hideHeader && (
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-base font-semibold">Bill of Materials (BOM)</Label>
+            <p className="text-sm text-muted-foreground">
+              Define materials required {quantityMultiplier > 1 ? `for ${quantityMultiplier} pieces` : "per 1 piece"}
+            </p>
+            {selectedStages.length === 0 && !scopeStage && (
+              <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+                Please select manufacturing stages first to add BOM entries.
+              </div>
+            )}
+          </div>
+          {!readOnly && (
+            <div className="flex items-center gap-2">
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="sm" 
+                onClick={addRow}
+                disabled={!canAddRow}
+              >
+                <PlusCircle className="mr-2 h-4 w-4" />
+                {addButtonLabel || "Add Raw Material"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addFinalRow}
+                disabled={!canAddRow}
+              >
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Add Final Stock
+              </Button>
             </div>
           )}
         </div>
-        {!readOnly && (
-          <Button 
-            type="button" 
-            variant="outline" 
-            size="sm" 
+      )}
+
+      {hideHeader && !showOnlyProductOptions && !readOnly && rowsToRender.length > 0 && (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={addRow}
-            disabled={selectedStages.length === 0}
+            disabled={!canAddRow}
           >
             <PlusCircle className="mr-2 h-4 w-4" />
-            Add Raw Material
+            {addButtonLabel || "Add Raw Material"}
           </Button>
-        )}
-      </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addFinalRow}
+            disabled={!canAddRow}
+          >
+            <PlusCircle className="mr-2 h-4 w-4" />
+            Add Final Stock
+          </Button>
+        </div>
+      )}
 
       {/* Product-level checkboxes for moulded, machined, and assembled units */}
-      {!readOnly && productName && (
+      {!readOnly && productName && !scopeStage && (
         <div className="border rounded-lg p-4 bg-muted/50 space-y-3">
           <Label className="text-sm font-semibold">Product-Level Options</Label>
           <div className="space-y-2">
-            <div className="flex items-center space-x-2">
+            <div className="flex justify-between items-center">
               <Checkbox
                 id="moulded-unit"
                 checked={mouldedUnitRequired}
@@ -384,7 +430,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
                 />
               </div>
             </div>
-            <div className="flex items-center space-x-2">
+           <div className="flex justify-between items-center">
               <Checkbox
                 id="machined-unit"
                 checked={machinedUnitRequired}
@@ -412,7 +458,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
                 />
               </div>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex justify-between items-center">
               <Checkbox
                 id="assembled-unit"
                 checked={assembledUnitRequired}
@@ -444,25 +490,33 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
         </div>
       )}
 
-      {bomRows.length === 0 ? (
+      {!showOnlyProductOptions && (rowsToRender.length === 0 ? (
         <div className="text-center py-8 border-2 border-dashed rounded-lg">
           <p className="text-muted-foreground">No materials added yet</p>
           {!readOnly && (
-            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={addRow}>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add First Material
-            </Button>
+            <div className="mt-2 flex items-center justify-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={addRow} disabled={!canAddRow}>
+                <PlusCircle className="mr-2 h-4 w-4" />
+                {addButtonLabel || "Add First Material"}
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={addFinalRow} disabled={!canAddRow}>
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Add Final Stock
+              </Button>
+            </div>
           )}
         </div>
       ) : (
         <div className="space-y-3">
-          {bomRows.map((row, index) => {
+          {rowsToRender.map((row, index) => {
             const material = rawMaterials.find(m => m.id === row.raw_material_id)
+            // Infer source as final if the id exists in final stock (covers older BOM rows without 'source')
+            const inferredIsFinal = row.source === "final" || availableFinalStock.some(p => p.id === row.raw_material_id)
             const totalQty = row.qty_per_piece * quantityMultiplier
 
             return (
               <div key={index} className="p-4 border rounded-lg bg-card space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <div className={`grid grid-cols-1 ${scopeStage ? "md:grid-cols-4" : "md:grid-cols-5"} gap-3`}>
                   {/* Raw Material */}
                   <div className="md:col-span-2">
                     <Label>Raw Material *</Label>
@@ -485,16 +539,22 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
                                 : `Assembled ${productName}`}
                           </SelectItem>
                         ) : (
-                          // Show only regular raw materials for manual rows
-                          availableMaterials.map((mat) => (
-                            <SelectItem key={mat.id} value={mat.id}>
-                              {mat.name} ({mat.quantity} {mat.unit})
-                            </SelectItem>
-                          ))
+                          // Show materials based on row source
+                          (inferredIsFinal
+                            ? availableFinalStock.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.name} ({getFinalStockAvailable(p)} pcs)
+                                </SelectItem>
+                              ))
+                            : availableMaterials.map((mat) => (
+                                <SelectItem key={mat.id} value={mat.id}>
+                                  {mat.name} ({mat.quantity} {mat.unit})
+                                </SelectItem>
+                              )))
                         )}
                       </SelectContent>
                     </Select>
-                    {isAutoManagedRow(row) && (
+                    {!scopeStage && isAutoManagedRow(row) && (
                       <p className="text-xs text-muted-foreground mt-1">
                         Managed by checkbox above
                       </p>
@@ -502,27 +562,29 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
                   </div>
 
                   {/* Stage */}
-                  <div>
-                    <Label>Stage *</Label>
-                    <Select
-                      value={row.stage}
-                      onValueChange={(value) => updateRow(index, "stage", value)}
-                      disabled={readOnly || isAutoManagedRow(row)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {processingStages
-                          .filter(stage => selectedStages.length === 0 || selectedStages.includes(stage))
-                          .map((stage) => (
-                          <SelectItem key={stage} value={stage}>
-                            {stage}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {!scopeStage && (
+                    <div>
+                      <Label>Stage *</Label>
+                      <Select
+                        value={row.stage}
+                        onValueChange={(value) => updateRow(index, "stage", value)}
+                        disabled={readOnly || isAutoManagedRow(row)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {processingStages
+                            .filter(stage => selectedStages.length === 0 || selectedStages.includes(stage))
+                            .map((stage) => (
+                            <SelectItem key={stage} value={stage}>
+                              {stage}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   {/* Quantity per piece */}
                   <div>
@@ -581,7 +643,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
             )
           })}
         </div>
-      )}
+      ))}
     </div>
   )
 }

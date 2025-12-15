@@ -81,7 +81,7 @@ export function BatchStageProcessor({
   
   const { rawMaterials, mouldedMaterials, finishedMaterials, assembledMaterials, updateRawMaterial, deleteRawMaterial } =
     useRawMaterials();
-  const { finalStock, createFinalStock } = useFinalStock();
+  const { finalStock, createFinalStock, updateFinalStock } = useFinalStock();
   const { createActivityLog } = useActivityLog();
   const { employee } = usePermissions();
   const { toast } = useToast();
@@ -166,14 +166,30 @@ export function BatchStageProcessor({
     )
   }
 
+  // Find inventory item across Raw Materials and Final Stock
+  const findInventoryItemById = (
+    id: string,
+  ): { item: { id: string; name: string; quantity: number; unit?: string }; kind: "raw" | "final" } | null => {
+    const raw = findStoreMaterialById(id)
+    if (raw) return { item: raw as any, kind: "raw" }
+    const fin = finalStock.find((p) => p.id === id)
+    if (fin) {
+      // Aggregate available quantity: prefer sum of batches when present, else fallback to quantity field
+      const batchesQty = (fin.batches || []).reduce((sum, b) => sum + Number(b.quantity || 0), 0)
+      const available = (fin.batches && fin.batches.length > 0) ? batchesQty : Number(fin.quantity || 0)
+      return { item: { id: fin.id, name: fin.name, quantity: available, unit: "pcs" }, kind: "final" }
+    }
+    return null
+  }
+
   const getMaxAcceptableUnitsForFirstStage = (batch: Batch, currentStage: ProcessingStageName): number => {
     const qtyToBuild = Math.max(1, Number(batch.quantityToBuild) || 1)
     const stageMaterials = batch.materials.filter((m) => m.stage === currentStage)
     if (stageMaterials.length === 0) return Infinity
     let maxUnits = Infinity
     for (const mat of stageMaterials) {
-      const storeMat = findStoreMaterialById(mat.id)
-      const available = Number(storeMat?.quantity || 0)
+      const inv = findInventoryItemById(mat.id)
+      const available = Number(inv?.item.quantity || 0)
       const perPiece = (Number(mat.quantity) || 0) / qtyToBuild
       if (perPiece > 0) {
         const possible = Math.floor(available / perPiece)
@@ -335,36 +351,78 @@ export function BatchStageProcessor({
   const processMaterialConsumptions = async (
     batch: Batch,
     materialConsumptions: { materialId: string; actualConsumption: number }[],
-    isCompleted: boolean
+    isCompleted: boolean,
+    acceptedUnits: number,
   ) => {
     if (!isCompleted) return;
 
     const materialsForStage = batch.materials.filter((m) => m.stage === stage);
     
     for (const materialInBatch of materialsForStage) {
-      const materialToUpdate = findStoreMaterialById(materialInBatch.id);
+      const inv = findInventoryItemById(materialInBatch.id);
       
-      if (materialToUpdate) {
+      if (inv) {
         const consumptionData = materialConsumptions.find(
           (mc) => mc.materialId === materialInBatch.id
         );
         
-        const consumptionAmount = consumptionData?.actualConsumption > 0
-          ? consumptionData.actualConsumption
-          : materialInBatch.quantity;
+        // Default to Accepted × (BOM qty per piece). We approximate per-piece as
+        // materialInBatch.quantity / batch.quantityToBuild when BOM is pre-expanded for the batch size.
+        const perPiece = Number(batch.quantityToBuild) > 0
+          ? Number(materialInBatch.quantity || 0) / Number(batch.quantityToBuild)
+          : 0
+        const defaultConsumption = Math.max(0, Number(acceptedUnits || 0) * perPiece)
+        const consumptionAmount = consumptionData && Number(consumptionData.actualConsumption) > 0
+          ? Number(consumptionData.actualConsumption)
+          : defaultConsumption
         
-        const oldQuantity = materialToUpdate.quantity;
+        const oldQuantity = Number(inv.item.quantity || 0);
         const newQuantity = Math.max(0, oldQuantity - consumptionAmount); // Ensure quantity doesn't go negative
 
-        await updateRawMaterial(materialToUpdate.id, {
-          quantity: newQuantity,
-        });
-        await addLog({
-          recordId: materialToUpdate.id,
-          recordType: "RawMaterial",
-          action: "Stock Adjustment (Batch)",
-          details: `Batch ${batch.id} (${stage}) consumed ${consumptionAmount} ${materialToUpdate.unit}. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
-        });
+        if (inv.kind === "raw") {
+          await updateRawMaterial(inv.item.id, { quantity: newQuantity });
+          await addLog({
+            recordId: inv.item.id,
+            recordType: "RawMaterial",
+            action: "Stock Adjustment (Batch)",
+            details: `Batch ${batch.id} (${stage}) consumed ${consumptionAmount} ${inv.item.unit || "pcs"}. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
+          });
+        } else {
+          const product = finalStock.find((p) => p.id === inv.item.id);
+          const hasBatches = product && Array.isArray(product.batches) && product.batches.length > 0;
+          if (hasBatches) {
+            let remaining = consumptionAmount;
+            const sorted = [...(product!.batches as any[])].sort((a, b) => {
+              const ta = new Date(a.createdAt || 0).getTime();
+              const tb = new Date(b.createdAt || 0).getTime();
+              return ta - tb;
+            });
+            for (const entry of sorted) {
+              if (remaining <= 0) break;
+              const q = Math.max(0, Number(entry.quantity || 0));
+              const deduct = Math.min(q, remaining);
+              entry.quantity = q - deduct;
+              remaining -= deduct;
+            }
+            const updatedBatches = sorted.filter((e) => Number(e.quantity || 0) > 0);
+            await updateFinalStock(inv.item.id, { batches: updatedBatches } as any);
+            const newTotal = updatedBatches.reduce((sum, b) => sum + Number(b.quantity || 0), 0);
+            await addLog({
+              recordId: inv.item.id,
+              recordType: "FinalStock",
+              action: "Stock Adjustment (Batch)",
+              details: `Batch ${batch.id} (${stage}) consumed ${consumptionAmount} pcs from batches. Old qty: ${oldQuantity}, New qty: ${newTotal}.`,
+            });
+          } else {
+            await updateFinalStock(inv.item.id, { quantity: newQuantity } as any);
+            await addLog({
+              recordId: inv.item.id,
+              recordType: "FinalStock",
+              action: "Stock Adjustment (Batch)",
+              details: `Batch ${batch.id} (${stage}) consumed ${consumptionAmount} pcs. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
+            });
+          }
+        }
       }
     }
   };
@@ -616,7 +674,7 @@ export function BatchStageProcessor({
             description: `Batch ${batch.id} for ${batch.productName} has completed the ${stage} stage.`,
           });
 
-          await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted);
+          await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted, formData.accepted);
 
             // Get product/effective stages to determine correct flow
           const product = getProductForBatch(batch);
@@ -711,7 +769,7 @@ export function BatchStageProcessor({
         console.log("DEBUG handleEndCycle - Batch stage status:", batch.id, stage, "completed:", batch.processingStages[stage]?.completed, "isCompleted:", isCompleted);
         
         if (isCompleted && !batch.processingStages[stage]?.completed) {
-          await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted);
+          await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted, formData.accepted);
 
           // Get product/effective stages to determine correct flow
           const product = getProductForBatch(batch);
@@ -804,12 +862,12 @@ export function BatchStageProcessor({
         if (!formData) continue
         const materialsForStage = batch.materials.filter((m) => m.stage === stage)
         for (const materialInBatch of materialsForStage) {
-          const rm = findStoreMaterialById(materialInBatch.id)
+          const inv = findInventoryItemById(materialInBatch.id)
           const mc = formData.materialConsumptions.find((x) => x.materialId === materialInBatch.id)
           const required = Math.max(0, Number(mc?.actualConsumption) || 0)
-          const available = Number(rm?.quantity || 0)
-          if (rm && required > available) {
-            shortages.push(`Batch ${batch.id} - ${rm.name}: need ${required} ${rm.unit}, have ${available} ${rm.unit}`)
+          const available = Number(inv?.item.quantity || 0)
+          if (inv && required > available) {
+            shortages.push(`Batch ${batch.id} - ${inv.item.name}: need ${required} ${(inv.item.unit || "pcs")}, have ${available} ${(inv.item.unit || "pcs")}`)
           }
         }
       }
@@ -853,7 +911,7 @@ export function BatchStageProcessor({
         }
 
         if (!batch.processingStages[stage]?.completed) {
-          await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted);
+          await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted, formData.accepted);
 
 // Get product/effective stages to determine correct flow
 const product = getProductForBatch(batch);
@@ -1187,6 +1245,8 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage, "hasNext:", hasNe
                           return qtyToBuild > 0 ? Number(material.quantity || 0) / qtyToBuild : 0;
                         })();
                         const autoRawInput = acceptedValue * bomPerPiece;
+                        const invInfo = findInventoryItemById(material.id);
+                        const displayName = (invInfo?.item?.name) || material.name || material.id;
 
                         return (
                           <TableRow
@@ -1212,7 +1272,7 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage, "hasNext:", hasNe
                                 form.setValue(fieldPath, next);
                               }}
                             >
-                              {material.name}
+                              {displayName}
                             </TableCell>
                             <TableCell></TableCell>
                             <TableCell></TableCell>

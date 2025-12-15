@@ -18,6 +18,8 @@ export interface BOMRow {
   qty_per_piece: number;
   unit: string;
   notes?: string;
+  // Source of input: default 'raw' (raw/materials store), or 'final' (Final Stock items used as input)
+  source?: "raw" | "final";
 }
 
 export interface BatchEntry {

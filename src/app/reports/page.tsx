@@ -119,6 +119,31 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
         </Link>
+
+                <Link href="/reports/testing">
+          <Card className={cn(
+            "transition-all hover:shadow-lg hover:border-primary cursor-pointer h-full"
+          )}>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <PlusCircle className="h-6 w-6 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <CardTitle>Testing Report</CardTitle>
+                  <CardDescription>
+                    Track product testing events with batch reference, tested quantity, pass/fail results.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                View a history of testing for finished products, quantity tested, pass/fail results.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
     </div>
   )

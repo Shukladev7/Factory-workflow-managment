@@ -225,7 +225,7 @@ export function ProductDetailsDialog({
               <div className="space-y-4">
                 <div className="relative aspect-video w-full rounded-lg overflow-hidden">
                   <Image
-                    src={groupedProduct.firstEntry.imageUrl}
+                    src={groupedProduct.firstEntry.imageUrl || "/placeholder.svg"}
                     alt={groupedProduct.productName}
                     data-ai-hint={groupedProduct.firstEntry.imageHint}
                     fill
