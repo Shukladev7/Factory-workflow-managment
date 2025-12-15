@@ -116,7 +116,6 @@ export default function LoginPage() {
           </Button>
         </form>
       </Form>
-
       <div className="flex items-center justify-between">
         <Link href="/auth/signup" className="text-sm text-primary underline underline-offset-4">
           Create account
