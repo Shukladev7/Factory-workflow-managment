@@ -75,7 +75,7 @@ export default function TestingReportPage() {
       "Product",
       "Qty",
       "Accepted",
-      "Rejected",
+      "Rejected Tested",
       "Created",
       "Finished",
     ]
@@ -84,7 +84,7 @@ export default function TestingReportPage() {
       const row = [
         r.id,
         (r.productName || "").replaceAll(",", " "),
-        String(r.quantityToBuild ?? 0),
+        String((r.accepted ?? 0) + (r.rejected ?? 0)),
         String(r.accepted ?? 0),
         String(r.rejected ?? 0),
         r.createdAt ? new Date(r.createdAt).toISOString() : "",
@@ -141,7 +141,7 @@ export default function TestingReportPage() {
                 <TableHead>Qty</TableHead>
                 
                 <TableHead>Accepted</TableHead>
-                <TableHead>Rejected</TableHead>
+                <TableHead>Rejected Tested</TableHead>
         
             
                 
@@ -161,7 +161,7 @@ export default function TestingReportPage() {
                   <TableRow key={r.id}>
                     <TableCell className="font-mono text-xs">{r.id}</TableCell>
                     <TableCell className="font-medium">{r.productName}</TableCell>
-                    <TableCell>{r.quantityToBuild}</TableCell>
+                    <TableCell>{(r.accepted ?? 0) + (r.rejected ?? 0)}</TableCell>
                     
                     <TableCell>{r.accepted}</TableCell>
                     <TableCell>{r.rejected}</TableCell>

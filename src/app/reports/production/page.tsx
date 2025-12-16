@@ -11,9 +11,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ShieldX } from "lucide-react"
 
 function getFinalOutputForBatch(batch: Batch): number {
-  // Final output preference: Testing > Machining > Assembling > Molding > 0
+  // Final output preference for Production report (exclude Testing):
+  // Machining > Assembling > Molding > 0
   const stages = batch.processingStages
-  if (stages.Testing?.completed) return stages.Testing.accepted
   if (stages.Machining?.completed) return stages.Machining.accepted
   if (stages.Assembling?.completed) return stages.Assembling.accepted
   if (stages.Molding?.completed) return stages.Molding.accepted
@@ -79,7 +79,10 @@ export default function ProductionReportsPage() {
   }, [])
 
   const rows = useMemo(() => {
-    return batches.map((b) => {
+    const nonTestingBatches = (batches || []).filter(
+      (b) => !(Array.isArray(b.selectedProcesses) && b.selectedProcesses.includes("Testing"))
+    )
+    return nonTestingBatches.map((b) => {
       const s = b.processingStages
       const moldingDone = Boolean(s?.Molding?.finishedAt)
       const finishingDone = Boolean(s?.Machining?.finishedAt)
@@ -89,8 +92,7 @@ export default function ProductionReportsPage() {
       const rejectedUnits =
         (Number(s?.Molding?.rejected) || 0) +
         (Number(s?.Machining?.rejected) || 0) +
-        (Number(s?.Assembling?.rejected) || 0) +
-        (Number(s?.Testing?.rejected) || 0)
+        (Number(s?.Assembling?.rejected) || 0)
 
       const producedUnits = getFinalOutputForBatch(b)
       const rawMaterialWastage = calculateRawMaterialWastage(b)

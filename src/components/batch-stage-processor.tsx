@@ -88,7 +88,7 @@ export function BatchStageProcessor({
   
   // Check if user has permission to edit this stage
   const canEditStage = employee ? canEditProcessingStage(employee.role, stage) : false;
-  const showRejected = false;
+  const showRejected = stage === "Testing";
 
   useEffect(() => {
     console.log("[v0] Setting up real-time subscription for stage:", stage);
@@ -347,6 +347,12 @@ export function BatchStageProcessor({
   };
 
   const labels = getStageLabels(stage);
+  
+  // After hiding previous stage and raw material input columns globally,
+  // compute total visible columns for empty-state colSpan.
+  // Visible columns:
+  // [Select, Batch ID, Product, Measurement Sketch, Date Created, (Actual Consumption if not Testing), Accepted, (Rejected if enabled)]
+  const totalColumns = 6 + (stage !== "Testing" ? 1 : 0) + (showRejected ? 1 : 0);
 
   const processMaterialConsumptions = async (
     batch: Batch,
@@ -641,18 +647,28 @@ export function BatchStageProcessor({
 
         console.log("[v0] Processing batch:", batch.id, "isCompleted:", isCompleted);
 
-        // Build materialConsumptions object
+        // Build materialConsumptions object (non-Testing stages only)
         const materialConsumptions: Record<string, number> = {};
-        formData.materialConsumptions.forEach((mc) => {
-          materialConsumptions[mc.materialId] = mc.actualConsumption;
-        });
+        if (stage !== "Testing") {
+          formData.materialConsumptions.forEach((mc) => {
+            materialConsumptions[mc.materialId] = mc.actualConsumption;
+          });
+        }
 
         try {
-          await updateBatchStage(batch.id, stage, {
-            accepted: formData.accepted,
-            ...(showRejected ? { rejected: formData.rejected } : {}),
-            materialConsumptions,
-          });
+          if (stage === "Testing") {
+            await updateBatchStage(batch.id, stage, {
+              accepted: formData.accepted,
+              ...(showRejected ? { rejected: formData.rejected } : {}),
+              actualConsumption: formData.accepted + (showRejected ? (formData.rejected || 0) : 0),
+            });
+          } else {
+            await updateBatchStage(batch.id, stage, {
+              accepted: formData.accepted,
+              ...(showRejected ? { rejected: formData.rejected } : {}),
+              materialConsumptions,
+            });
+          }
         } catch (error) {
           console.error(`[v0] Failed to update batch ${batch.id}:`, error);
           toast({
@@ -674,7 +690,12 @@ export function BatchStageProcessor({
             description: `Batch ${batch.id} for ${batch.productName} has completed the ${stage} stage.`,
           });
 
-          await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted, formData.accepted);
+          if (stage !== "Testing") {
+            await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted, formData.accepted);
+          } else {
+            const totalConsumed = formData.accepted + (showRejected ? (formData.rejected || 0) : 0);
+            await processMaterialConsumptions(batch, [], isCompleted, totalConsumed);
+          }
 
             // Get product/effective stages to determine correct flow
           const product = getProductForBatch(batch);
@@ -736,11 +757,21 @@ export function BatchStageProcessor({
     setIsEndingCycle(true);
 
     try {
+      if (selectedBatches.size === 0) {
+        toast({
+          variant: "destructive",
+          title: "No Batches Selected",
+          description: "Please select at least one batch to proceed.",
+        });
+        return;
+      }
+
       const values = form.getValues();
 
       // No upper bound validation for accepted quantity; it can be any non-negative value.
 
       for (const batch of batches) {
+        if (!selectedBatches.has(batch.id)) continue;
         const formData = values.batches.find((b) => b.id === batch.id);
         if (!formData) continue;
 
@@ -750,16 +781,26 @@ export function BatchStageProcessor({
         const isCompleted = currentTotal > 0;
 
         const materialConsumptions: Record<string, number> = {};
-        formData.materialConsumptions.forEach((mc) => {
-          materialConsumptions[mc.materialId] = mc.actualConsumption;
-        });
+        if (stage !== "Testing") {
+          formData.materialConsumptions.forEach((mc) => {
+            materialConsumptions[mc.materialId] = mc.actualConsumption;
+          });
+        }
 
         try {
-          await updateBatchStage(batch.id, stage, {
-            accepted: formData.accepted,
-            ...(showRejected ? { rejected: formData.rejected } : {}),
-            materialConsumptions,
-          });
+          if (stage === "Testing") {
+            await updateBatchStage(batch.id, stage, {
+              accepted: formData.accepted,
+              ...(showRejected ? { rejected: formData.rejected } : {}),
+              actualConsumption: formData.accepted + (showRejected ? (formData.rejected || 0) : 0),
+            });
+          } else {
+            await updateBatchStage(batch.id, stage, {
+              accepted: formData.accepted,
+              ...(showRejected ? { rejected: formData.rejected } : {}),
+              materialConsumptions,
+            });
+          }
         } catch (error) {
           console.error(`[v0] Failed to update batch ${batch.id}:`, error);
           continue;
@@ -769,7 +810,12 @@ export function BatchStageProcessor({
         console.log("DEBUG handleEndCycle - Batch stage status:", batch.id, stage, "completed:", batch.processingStages[stage]?.completed, "isCompleted:", isCompleted);
         
         if (isCompleted && !batch.processingStages[stage]?.completed) {
-          await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted, formData.accepted);
+          if (stage !== "Testing") {
+            await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted, formData.accepted);
+          } else {
+            const totalConsumed = formData.accepted + (showRejected ? (formData.rejected || 0) : 0);
+            await processMaterialConsumptions(batch, [], isCompleted, totalConsumed);
+          }
 
           // Get product/effective stages to determine correct flow
           const product = getProductForBatch(batch);
@@ -835,6 +881,15 @@ export function BatchStageProcessor({
     setIsFinishing(true);
 
     try {
+      if (selectedBatches.size === 0) {
+        toast({
+          variant: "destructive",
+          title: "No Batches Selected",
+          description: "Please select at least one batch to finish.",
+        })
+        return
+      }
+
       const values = form.getValues();
 
       console.log("DEBUG handleFinishBatch - All batches:", batches.length);
@@ -855,9 +910,20 @@ export function BatchStageProcessor({
         return;
       }
 
+      // Restrict to user-selected batches
+      const selectedTargetBatches = targetBatches.filter((b) => selectedBatches.has(b.id));
+      if (selectedTargetBatches.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "No Selected Batches",
+          description: "Please select at least one batch checkbox to proceed.",
+        })
+        return
+      }
+
       // Stock check before finishing: ensure available inventory covers required consumption for this stage
       const shortages: string[] = []
-      for (const batch of targetBatches) {
+      for (const batch of selectedTargetBatches) {
         const formData = values.batches.find((b) => b.id === batch.id)
         if (!formData) continue
         const materialsForStage = batch.materials.filter((m) => m.stage === stage)
@@ -885,7 +951,7 @@ export function BatchStageProcessor({
 
       // No upper bound validation for accepted quantity; it can be any non-negative value.
 
-      for (const batch of targetBatches) {
+      for (const batch of selectedTargetBatches) {
         const formData = values.batches.find((b) => b.id === batch.id);
         if (!formData) continue;
 
@@ -900,18 +966,31 @@ export function BatchStageProcessor({
         });
 
         try {
-          await updateBatchStage(batch.id, stage, {
-            accepted: formData.accepted,
-            ...(showRejected ? { rejected: formData.rejected } : {}),
-            materialConsumptions,
-          });
+          if (stage === "Testing") {
+            const totalConsumed = formData.accepted + (showRejected ? (formData.rejected || 0) : 0);
+            await updateBatchStage(batch.id, stage, {
+              accepted: formData.accepted,
+              ...(showRejected ? { rejected: formData.rejected } : {}),
+              materialConsumptions,
+              actualConsumption: totalConsumed,
+            });
+          } else {
+            await updateBatchStage(batch.id, stage, {
+              accepted: formData.accepted,
+              ...(showRejected ? { rejected: formData.rejected } : {}),
+              materialConsumptions,
+            });
+          }
         } catch (error) {
           console.error(`[v0] Failed to update batch ${batch.id}:`, error);
           continue;
         }
 
         if (!batch.processingStages[stage]?.completed) {
-          await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted, formData.accepted);
+          const acceptedUnitsForConsumption = stage === "Testing"
+            ? (formData.accepted + (showRejected ? (formData.rejected || 0) : 0))
+            : formData.accepted;
+          await processMaterialConsumptions(batch, formData.materialConsumptions, isCompleted, acceptedUnitsForConsumption);
 
 // Get product/effective stages to determine correct flow
 const product = getProductForBatch(batch);
@@ -1040,13 +1119,9 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage, "hasNext:", hasNe
                   <TableHead>Product</TableHead>
                   <TableHead>Measurement Sketch</TableHead>
                   <TableHead>Date Created</TableHead>
-                  {labels.prevStage && (
-                    <TableHead>{labels.prevStage}</TableHead>
+                  {stage !== "Testing" && (
+                    <TableHead className="w-[150px]">Actual Consumption</TableHead>
                   )}
-                  <TableHead>{labels.input}</TableHead>
-                  <TableHead className="w-[150px]">
-                    Actual Consumption
-                  </TableHead>
                   <TableHead className="w-[150px]">{labels.accepted}</TableHead>
                   {showRejected && (
                     <TableHead className="w-[150px]">{labels.rejected}</TableHead>
@@ -1058,8 +1133,6 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage, "hasNext:", hasNe
                   const batch = batches[index];
                   if (!batch) return null;
 
-                  const rawMaterialInput = getRawMaterialForStage(batch);
-                  const fromPrevStageInput = getInputFromPreviousStage(batch);
                   const materialsForStage = batch.materials.filter(
                     (m) => m.stage === stage,
                   );
@@ -1150,15 +1223,9 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage, "hasNext:", hasNe
                           )}
                         </TableCell>
                         <TableCell className="font-bold">
-                          {format(new Date(batch.createdAt), "MM/dd/yyyy")}
+                          {format(new Date(batch.createdAt), "dd/MM/yyyy")}
                         </TableCell>
-                        {labels.prevStage && (
-                          <TableCell>
-                            {fromPrevStageInput.toLocaleString()}
-                          </TableCell>
-                        )}
-                        <TableCell></TableCell>
-                        <TableCell></TableCell>
+                        {stage !== "Testing" && <TableCell></TableCell>}
                         <TableCell
                           rowSpan={
                             materialsForStage.length > 0
@@ -1235,16 +1302,6 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage, "hasNext:", hasNe
                           (mc: any) => mc.materialId === material.id
                         ) ?? -1;
 
-                        // Auto-compute Raw Material Input = Accepted × (BOM qty per piece)
-                        const acceptedValue = Number(form.watch(`batches.${index}.accepted`) ?? 0) || 0;
-                        const bomPerPiece = (() => {
-                          const rows = (product?.bom_per_piece as any[]) || [];
-                          const match = rows.find((row: any) => row.stage === stage && row.raw_material_id === material.id);
-                          if (match && typeof match.qty_per_piece === "number") return match.qty_per_piece;
-                          const qtyToBuild = Number(batch.quantityToBuild || 0);
-                          return qtyToBuild > 0 ? Number(material.quantity || 0) / qtyToBuild : 0;
-                        })();
-                        const autoRawInput = acceptedValue * bomPerPiece;
                         const invInfo = findInventoryItemById(material.id);
                         const displayName = (invInfo?.item?.name) || material.name || material.id;
 
@@ -1277,41 +1334,40 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage, "hasNext:", hasNe
                             <TableCell></TableCell>
                             <TableCell></TableCell>
                             <TableCell></TableCell>
-                            {labels.prevStage && <TableCell></TableCell>}
-                            <TableCell className="font-medium">
-                              {autoRawInput.toLocaleString()} {material.unit}
-                            </TableCell>
-                            <TableCell>
-                              {materialConsumptionIndex >= 0 && (
-                                <FormField
-                                  control={form.control}
-                                  name={`batches.${index}.materialConsumptions.${materialConsumptionIndex}.actualConsumption`}
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormControl>
-                                        <Input 
-                                          type="number" 
-                                          className={numberInputClassName}
-                                          {...field}
-                                          placeholder={material.quantity.toString()}
-                                          disabled={isAnyButtonDisabled}
-                                          onChange={(e) => {
-                                            const rawValue = e.target.value;
-                                            const consumptionValue = Math.max(0, Number(rawValue) || 0);
+                            
+                            {stage !== "Testing" && (
+                              <TableCell>
+                                {materialConsumptionIndex >= 0 && (
+                                  <FormField
+                                    control={form.control}
+                                    name={`batches.${index}.materialConsumptions.${materialConsumptionIndex}.actualConsumption`}
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormControl>
+                                          <Input 
+                                            type="number" 
+                                            className={numberInputClassName}
+                                            {...field}
+                                            placeholder={material.quantity.toString()}
+                                            disabled={isAnyButtonDisabled}
+                                            onChange={(e) => {
+                                              const rawValue = e.target.value;
+                                              const consumptionValue = Math.max(0, Number(rawValue) || 0);
 
-                                            // Normalize display value (strip leading zeros)
-                                            e.target.value = consumptionValue.toString();
+                                              // Normalize display value (strip leading zeros)
+                                              e.target.value = consumptionValue.toString();
 
-                                            field.onChange(consumptionValue);
-                                          }}
-                                        />
-                                      </FormControl>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                              )}
-                            </TableCell>
+                                              field.onChange(consumptionValue);
+                                            }}
+                                          />
+                                        </FormControl>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                )}
+                              </TableCell>
+                            )}
                           </TableRow>
                         );
                       })}
@@ -1320,7 +1376,7 @@ console.log("DEBUG handleFinishBatch - Current stage:", stage, "hasNext:", hasNe
                 })}
                 {batches.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={showRejected ? 10 : 9} className="h-24 text-center">
+                    <TableCell colSpan={totalColumns} className="h-24 text-center">
                       No batches are ready for the {stage} stage.
                     </TableCell>
                   </TableRow>
