@@ -159,23 +159,20 @@ export function getBatchFinalDestination(
 ): "Store" | "Final Stock" {
   const stages = batch.selectedProcesses
   
-  // Special case: Only Molding and Machining -> Final Stock
-  if (stages.length === 2 && 
-      stages.includes("Molding") && 
-      stages.includes("Machining")) {
+  // Any single-stage product should be treated as going directly to Final Stock
+  if (stages.length === 1) {
     return "Final Stock"
   }
-  
-  // Single Machining only -> Store (as finished materials)
-  if (stages.length === 1 && stages.includes("Machining")) {
-    return "Store"
+
+  // Special case: Only Molding and Machining -> Final Stock
+  if (
+    stages.length === 2 &&
+    stages.includes("Molding") &&
+    stages.includes("Machining")
+  ) {
+    return "Final Stock"
   }
-  
-  // Single Molding only -> Store (as moulded materials)
-  if (stages.length === 1 && stages.includes("Molding")) {
-    return "Store"
-  }
-  
+
   // All other combinations -> Final Stock (after last stage)
   return "Final Stock"
 }

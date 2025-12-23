@@ -120,7 +120,7 @@ export default function AssemblingPage() {
       const productThreshold = product?.assembledThreshold
       const threshold = (m.threshold && m.threshold > 0) ? m.threshold : (productThreshold ?? 0)
       const urgency = Number(m.quantity ?? 0) - Number(threshold ?? 0)
-      return { material: m, threshold, urgency }
+      return { material: m, product, threshold, urgency }
     })
     return enriched.sort((a, b) => a.urgency - b.urgency)
   }, [assembledMaterials, finalStock])
@@ -252,6 +252,7 @@ export default function AssemblingPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>System ID</TableHead>
+                <TableHead>Product ID</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>SKU</TableHead>
                 <TableHead>Quantity</TableHead>
@@ -261,9 +262,12 @@ export default function AssemblingPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map(({ material, threshold }) => (
+              {items.map(({ material, product, threshold }) => (
                 <TableRow key={material.id}>
                   <TableCell className="font-mono text-xs">{material.id}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {product ? (product.productId || product.id) : "—"}
+                  </TableCell>
                   <TableCell className="font-medium">{material.name}</TableCell>
                   <TableCell className="font-mono text-xs">{material.sku}</TableCell>
                   <TableCell>
@@ -279,6 +283,7 @@ export default function AssemblingPage() {
               {finalItems.map(({ product, quantity, threshold }) => (
                 <TableRow key={`final-${product.id}`}>
                   <TableCell className="font-mono text-xs">{product.id}</TableCell>
+                  <TableCell className="font-mono text-xs">{product.productId || product.id}</TableCell>
                   <TableCell className="font-medium">{product.name}</TableCell>
                   <TableCell className="font-mono text-xs">{product.sku}</TableCell>
                   <TableCell>
