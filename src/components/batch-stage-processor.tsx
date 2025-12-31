@@ -352,7 +352,7 @@ export function BatchStageProcessor({
   // compute total visible columns for empty-state colSpan.
   // Visible columns:
   // [Select, Batch ID, Product, Measurement Sketch, Date Created, (Actual Consumption if not Testing), Accepted, (Rejected if enabled)]
-  const totalColumns = 6 + (stage !== "Testing" ? 1 : 0) + (showRejected ? 1 : 0);
+  const totalColumns = 7 + (stage !== "Testing" ? 1 : 0) + (showRejected ? 1 : 0);
 
   const processMaterialConsumptions = async (
     batch: Batch,
@@ -614,6 +614,21 @@ export function BatchStageProcessor({
     }
   };
 
+  const getEffectiveSelectedBatches = (
+    formValues: z.infer<typeof formSchema>,
+  ): Set<string> => {
+    const effective = new Set(selectedBatches);
+    for (const batchForm of formValues.batches) {
+      const hasAccepted = Number(batchForm.accepted || 0) > 0;
+      const hasRejected =
+        showRejected && Number((batchForm as any).rejected || 0) > 0;
+      if (hasAccepted || hasRejected) {
+        effective.add(batchForm.id);
+      }
+    }
+    return effective;
+  };
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     console.log("🚀 DEBUG: onSubmit function called for stage:", stage);
     
@@ -621,7 +636,10 @@ export function BatchStageProcessor({
     
     console.log("[v0] Submitting form for stage:", stage, "with values:", values);
 
-    if (selectedBatches.size === 0) {
+    const effectiveSelected = getEffectiveSelectedBatches(values);
+    setSelectedBatches(effectiveSelected);
+
+    if (effectiveSelected.size === 0) {
       toast({
         variant: "destructive",
         title: "No Batches Selected",
@@ -636,7 +654,7 @@ export function BatchStageProcessor({
 
     try {
       for (const batch of batches) {
-        if (!selectedBatches.has(batch.id)) continue;
+        if (!effectiveSelected.has(batch.id)) continue;
         const formData = values.batches.find((b) => b.id === batch.id);
         if (!formData) continue;
 
@@ -764,7 +782,11 @@ export function BatchStageProcessor({
     setIsEndingCycle(true);
 
     try {
-      if (selectedBatches.size === 0) {
+      const values = form.getValues();
+      const effectiveSelected = getEffectiveSelectedBatches(values);
+      setSelectedBatches(effectiveSelected);
+
+      if (effectiveSelected.size === 0) {
         toast({
           variant: "destructive",
           title: "No Batches Selected",
@@ -773,12 +795,10 @@ export function BatchStageProcessor({
         return;
       }
 
-      const values = form.getValues();
-
       // No upper bound validation for accepted quantity; it can be any non-negative value.
 
       for (const batch of batches) {
-        if (!selectedBatches.has(batch.id)) continue;
+        if (!effectiveSelected.has(batch.id)) continue;
         const formData = values.batches.find((b) => b.id === batch.id);
         if (!formData) continue;
 
@@ -787,6 +807,9 @@ export function BatchStageProcessor({
           : formData.accepted;
         const isCompleted = currentTotal > 0;
 
+        console.log("[v0] Processing batch:", batch.id, "isCompleted:", isCompleted);
+
+        // Build materialConsumptions object (non-Testing stages only)
         const materialConsumptions: Record<string, number> = {};
         if (stage !== "Testing") {
           formData.materialConsumptions.forEach((mc) => {
@@ -840,10 +863,8 @@ export function BatchStageProcessor({
             effectiveStages.length === 1 && effectiveStages[0] === stage;
           
           // Use effective stages to determine if it should go to Final Stock
-          // Check for both "Molding" and "Moulding" spelling variations
           const productIsMoldingAndMachiningOnly = effectiveStages.length === 2 && 
-            (effectiveStages.includes("Molding") || effectiveStages.includes("Moulding")) && 
-            effectiveStages.includes("Machining");
+            effectiveStages.includes("Molding") && effectiveStages.includes("Machining");
             
           console.log("DEBUG - productIsMoldingAndMachiningOnly:", productIsMoldingAndMachiningOnly);
           if (isSingleStageProduct && formData.accepted > 0) {
@@ -895,7 +916,11 @@ export function BatchStageProcessor({
     setIsFinishing(true);
 
     try {
-      if (selectedBatches.size === 0) {
+      const values = form.getValues();
+      const effectiveSelected = getEffectiveSelectedBatches(values);
+      setSelectedBatches(effectiveSelected);
+
+      if (effectiveSelected.size === 0) {
         toast({
           variant: "destructive",
           title: "No Batches Selected",
@@ -904,28 +929,11 @@ export function BatchStageProcessor({
         return
       }
 
-      const values = form.getValues();
-
       console.log("DEBUG handleFinishBatch - All batches:", batches.length);
       console.log("DEBUG handleFinishBatch - Current stage:", stage);
       
-      const batchesWithThisAsLastStage = batches.filter((batch) => {
-        const effectiveStages = getEffectiveStagesForBatch(batch);
-        const lastStage = effectiveStages[effectiveStages.length - 1];
-        console.log("DEBUG handleFinishBatch - Batch:", batch.id, "effectiveStages:", effectiveStages, "lastStage:", lastStage);
-        return lastStage === stage;
-      });
-
-      console.log("DEBUG handleFinishBatch - Batches with this as last stage:", batchesWithThisAsLastStage.length);
-      
-      const targetBatches = batchesWithThisAsLastStage.length > 0 ? batchesWithThisAsLastStage : batches;
-      if (targetBatches.length === 0) {
-        console.log("DEBUG handleFinishBatch - No target batches for this stage, returning");
-        return;
-      }
-
-      // Restrict to user-selected batches
-      const selectedTargetBatches = targetBatches.filter((b) => selectedBatches.has(b.id));
+      // Work on all effectively selected batches for this stage
+      const selectedTargetBatches = batches.filter((b) => effectiveSelected.has(b.id));
       if (selectedTargetBatches.length === 0) {
         toast({
           variant: "destructive",
@@ -1138,6 +1146,7 @@ export function BatchStageProcessor({
                     />
                   </TableHead>
                   <TableHead>Batch ID</TableHead>
+                  <TableHead>Product ID</TableHead>
                   <TableHead>Product</TableHead>
                   <TableHead>Measurement Sketch</TableHead>
                   <TableHead>Date Created</TableHead>
@@ -1191,7 +1200,10 @@ export function BatchStageProcessor({
                           />
                         </TableCell>
                         <TableCell className="font-mono text-xs font-bold">
-                          {batch.id}
+                          {batch.batchCode || batch.id}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {product ? (product.productId || product.id) : batch.productId}
                         </TableCell>
                         <TableCell
                           className="font-bold cursor-pointer select-none"
@@ -1353,6 +1365,7 @@ export function BatchStageProcessor({
                             >
                               {displayName}
                             </TableCell>
+                            <TableCell></TableCell>
                             <TableCell></TableCell>
                             <TableCell></TableCell>
                             <TableCell></TableCell>

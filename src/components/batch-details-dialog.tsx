@@ -104,6 +104,8 @@ export function BatchDetailsDialog({
     onBatchDelete(batch.id)
   }
 
+  const displayBatchId = batch.batchCode || batch.id
+
   const getStageLabels = (stageName: ProcessingStageName) => {
     switch (stageName) {
       case "Molding":
@@ -182,7 +184,7 @@ export function BatchDetailsDialog({
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <strong>Batch ID:</strong> <TruncatedId id={batch.id} maxLength={16} />
+          <strong>Batch ID:</strong> <TruncatedId id={displayBatchId} maxLength={16} />
         </div>
         <div>
           <strong>Created:</strong> {format(new Date(batch.createdAt), "MM/dd/yyyy")}
@@ -284,7 +286,7 @@ export function BatchDetailsDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isEditing ? "Edit Batch" : "Batch Details:"}
-            <TruncatedId id={batch.id} maxLength={12} />
+            <TruncatedId id={displayBatchId} maxLength={12} />
           </DialogTitle>
           <DialogDescription>
             {isEditing ? "Update the details for this batch." : "Viewing details and activity for this production batch."}
@@ -312,7 +314,7 @@ export function BatchDetailsDialog({
                       <AlertDialogDescription>
                         <div className="flex items-center gap-2">
                           This action cannot be undone. This will permanently delete batch
-                          <TruncatedId id={batch.id} maxLength={10} />
+                          <TruncatedId id={displayBatchId} maxLength={10} />
                         </div>
                       </AlertDialogDescription>
                     </AlertDialogHeader>

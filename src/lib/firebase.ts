@@ -18,6 +18,48 @@ import type { Batch, ProcessingStageName, BatchStatus } from "./types";
 // Collection reference
 const BATCHES_COLLECTION = "batches";
 
+function getStageCode(stage: ProcessingStageName): string {
+  switch (stage) {
+    case "Molding":
+      return "MLD";
+    case "Machining":
+      return "MCH";
+    case "Assembling":
+      return "ASM";
+    case "Testing":
+      return "TST";
+    default:
+      return "GEN";
+  }
+}
+
+async function generateBatchCode(stage: ProcessingStageName): Promise<string> {
+  const batchesRef = collection(db, BATCHES_COLLECTION);
+  const stageCode = getStageCode(stage);
+  const prefix = `BATCH-${stageCode}-`;
+
+  // Find all batches that include this stage and already have a batchCode with this prefix
+  const q = query(batchesRef, where("selectedProcesses", "array-contains", stage));
+  const snapshot = await getDocs(q);
+
+  let maxSeq = 0;
+  snapshot.forEach((docSnap) => {
+    const data: any = docSnap.data();
+    const code: string | undefined = data.batchCode;
+    if (code && code.startsWith(prefix)) {
+      const tail = code.substring(prefix.length);
+      const num = parseInt(tail, 10);
+      if (!Number.isNaN(num) && num > maxSeq) {
+        maxSeq = num;
+      }
+    }
+  });
+
+  const next = maxSeq + 1;
+  const seq = String(next).padStart(3, "0");
+  return `${prefix}${seq}`;
+}
+
 /**
  * Get all batches from Firestore
  */
@@ -162,8 +204,24 @@ export function subscribeToAllBatches(
  */
 export async function createBatch(batch: Omit<Batch, "id">): Promise<string> {
   const batchesRef = collection(db, BATCHES_COLLECTION);
+  const primaryStage: ProcessingStageName | undefined =
+    Array.isArray(batch.selectedProcesses) && batch.selectedProcesses.length > 0
+      ? batch.selectedProcesses[0]
+      : undefined;
+
+  let batchCode: string | undefined;
+  if (primaryStage) {
+    try {
+      batchCode = await generateBatchCode(primaryStage);
+    } catch (e) {
+      // Fallback: do not block creation if code generation fails
+      batchCode = undefined;
+    }
+  }
+
   const docRef = await addDoc(batchesRef, {
     ...batch,
+    batchCode,
     createdAt: batch.createdAt || new Date().toISOString(),
   });
   return docRef.id;

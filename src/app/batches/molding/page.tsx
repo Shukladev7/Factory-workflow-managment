@@ -13,6 +13,17 @@ import type { RawMaterial, FinalStock, Batch, ProcessingStageName } from "@/lib/
 import { AlertTriangle, XCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createBatch } from "@/lib/firebase"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 export default function MoldingPage() {
   const { mouldedMaterials, rawMaterials } = useRawMaterials()
@@ -277,7 +288,25 @@ export default function MoldingPage() {
                   <TableCell>{threshold ?? 0}</TableCell>
                   <TableCell>{renderStatus(Number(material.quantity ?? 0), Number(threshold ?? 0))}</TableCell>
                   <TableCell>
-                    <Button size="sm" onClick={() => handleCreateBatch(material)}>Create Batch</Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm">Create Batch</Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Create batch?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to create a batch for {product ? product.name : material.name} in the Molding stage?
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleCreateBatch(material)}>
+                            Confirm
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))}
@@ -293,7 +322,25 @@ export default function MoldingPage() {
                   <TableCell>{threshold ?? 0}</TableCell>
                   <TableCell>{renderStatus(Number(quantity ?? 0), Number(threshold ?? 0))}</TableCell>
                   <TableCell>
-                    <Button size="sm" onClick={() => handleCreateFinalBatch(product)}>Create Batch</Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm">Create Batch</Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Create batch?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to create a batch for {product.name} in the Molding stage?
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleCreateFinalBatch(product)}>
+                            Confirm
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))}

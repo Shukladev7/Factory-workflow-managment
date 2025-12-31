@@ -12,6 +12,17 @@ import { useRawMaterials } from "@/hooks/use-raw-materials"
 import { useFinalStock } from "@/hooks/use-final-stock"
 import { useToast } from "@/hooks/use-toast"
 import { createBatch } from "@/lib/firebase"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { useActivityLog } from "@/hooks/use-activity-log"
 
 export default function TestingPage() {
@@ -174,7 +185,30 @@ export default function TestingPage() {
                         <Badge variant={status === "Low Stock" ? "destructive" : "secondary"}>{status}</Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button size="sm" disabled={(Number(material.quantity) || 0) < 1} onClick={() => handleTest(material, product)}>Test</Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              size="sm"
+                              disabled={(Number(material.quantity) || 0) < 1}
+                            >
+                              Test
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Create testing batch?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to create a Testing batch from store item {material.name} for product {product.name}?
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleTest(material, product)}>
+                                Confirm
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </TableCell>
                     </TableRow>
                   )

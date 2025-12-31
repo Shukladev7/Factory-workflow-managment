@@ -4,9 +4,9 @@ import React, { useEffect } from "react"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
 import { StockNotifier } from "@/components/stock-notifier"
-import { AppSidebar } from "@/components/app-sidebar"
 import { AuthGate } from "@/components/auth/auth-gate"
 import { usePathname } from "next/navigation"
+import { AppTopbar } from "@/components/app-topbar"
 
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -18,9 +18,9 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         children
       ) : (
         <>
-          <div className="flex h-screen overflow-hidden">
-            <AppSidebar />
-            <main className="flex-1 p-4 pt-20 md:pt-16 lg:p-8 lg:pt-16 overflow-y-auto">
+          <AppTopbar />
+          <div className="min-h-screen bg-background">
+            <main className="pt-20 md:pt-20 lg:pt-24 px-4 lg:px-8 pb-4 overflow-y-auto">
               {children}
             </main>
           </div>

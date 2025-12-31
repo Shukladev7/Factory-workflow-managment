@@ -88,6 +88,7 @@ export interface BatchMaterial {
 
 export interface Batch {
   id: string;
+  batchCode?: string; // Human-readable batch identifier (e.g., BATCH-MLD-001)
   productId: string;
   productName: string;
   quantityToBuild: number;
