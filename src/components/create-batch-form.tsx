@@ -240,8 +240,8 @@ export function CreateBatchForm({ onBatchCreated, initialProductId, initialStage
 
   useEffect(() => {
     setIsClient(true);
-    const newId = `B${Date.now().toString().slice(-4)}`;
-    form.setValue("batchId", newId);
+    // Display placeholder; Firestore document ID will be generated and stored server-side
+    form.setValue("batchId", "batch_000");
   }, [form]);
 
   const addLog = async (
@@ -388,7 +388,7 @@ export function CreateBatchForm({ onBatchCreated, initialProductId, initialStage
 
       // Reset form after successful submission
       form.reset({
-        batchId: `B${Date.now().toString().slice(-4)}`, // Generate new ID
+        batchId: "batch_000", // Placeholder only; actual ID comes from Firestore
         productId: "",
         quantityToBuild: 1,
         selectedProcesses: [],

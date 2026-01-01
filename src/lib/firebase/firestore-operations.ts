@@ -22,6 +22,7 @@ import type {
   ProductGroup,
   RestockRecord,
 } from "@/lib/types";
+import { generateReadableId } from "@/lib/id";
 
 // Collection names
 export const COLLECTIONS = {
@@ -38,12 +39,13 @@ export const COLLECTIONS = {
 
 // Batch operations
 export async function addBatch(batch: Omit<Batch, "id">) {
-  const batchesRef = collection(db, COLLECTIONS.BATCHES);
-  const docRef = await addDoc(batchesRef, {
+  const id = await generateReadableId(COLLECTIONS.BATCHES, "batch");
+  const batchRef = doc(db, COLLECTIONS.BATCHES, id);
+  await setDoc(batchRef, {
     ...batch,
     createdAt: batch.createdAt || new Date().toISOString(),
   });
-  return docRef.id;
+  return id;
 }
 
 export async function updateBatch(id: string, updates: Partial<Batch>) {
@@ -58,9 +60,10 @@ export async function deleteBatch(id: string) {
 
 // Raw Material operations
 export async function addRawMaterial(material: Omit<RawMaterial, "id">) {
-  const materialsRef = collection(db, COLLECTIONS.RAW_MATERIALS);
-  const docRef = await addDoc(materialsRef, material);
-  return docRef.id;
+  const id = await generateReadableId(COLLECTIONS.RAW_MATERIALS, "material");
+  const materialRef = doc(db, COLLECTIONS.RAW_MATERIALS, id);
+  await setDoc(materialRef, material);
+  return id;
 }
 
 export async function updateRawMaterial(
@@ -113,28 +116,19 @@ export async function getRegularRawMaterials(): Promise<RawMaterial[]> {
 
 // Final Stock operations
 export async function addFinalStock(product: Omit<FinalStock, "id">) {
-  const stockRef = collection(db, COLLECTIONS.FINAL_STOCK);
-
   // Ensure id field is never saved to Firestore (only document ID matters)
-  const { id, ...productData } = product as any;
+  const { id: _ignored, ...productData } = product as any;
 
-  if (id !== undefined) {
-    console.warn(
-      "[addFinalStock] Removed id field from product data:",
-      id,
-      "Product:",
-      productData.name,
-    );
-  }
-
-  const docRef = await addDoc(stockRef, productData);
+  const newId = await generateReadableId(COLLECTIONS.FINAL_STOCK, "product");
+  const stockRef = doc(db, COLLECTIONS.FINAL_STOCK, newId);
+  await setDoc(stockRef, productData);
   console.log(
     "[addFinalStock] Created product:",
     productData.name,
     "with Firestore ID:",
-    docRef.id,
+    newId,
   );
-  return docRef.id;
+  return newId;
 }
 
 export async function updateFinalStock(
@@ -275,12 +269,13 @@ export async function addBatchToProduct(
 
 // Activity Log operations
 export async function addActivityLog(log: Omit<ActivityLog, "id">) {
-  const logsRef = collection(db, COLLECTIONS.ACTIVITY_LOG);
-  const docRef = await addDoc(logsRef, {
+  const id = await generateReadableId(COLLECTIONS.ACTIVITY_LOG, "log");
+  const logRef = doc(db, COLLECTIONS.ACTIVITY_LOG, id);
+  await setDoc(logRef, {
     ...log,
     timestamp: log.timestamp || new Date().toISOString(),
   });
-  return docRef.id;
+  return id;
 }
 
 // Employee operations
@@ -335,9 +330,10 @@ export async function getEmployeeByUid(uid: string): Promise<Employee | null> {
 
 // Unit of Measure operations
 export async function addUnit(unit: Omit<UnitOfMeasure, "id">) {
-  const unitsRef = collection(db, COLLECTIONS.UNITS);
-  const docRef = await addDoc(unitsRef, unit);
-  return docRef.id;
+  const id = await generateReadableId(COLLECTIONS.UNITS, "unit");
+  const unitRef = doc(db, COLLECTIONS.UNITS, id);
+  await setDoc(unitRef, unit);
+  return id;
 }
 
 export async function updateUnit(id: string, updates: Partial<UnitOfMeasure>) {
@@ -352,18 +348,18 @@ export async function deleteUnit(id: string) {
 
 // Product Group operations
 export async function addProductGroup(group: Omit<ProductGroup, "id">) {
-	const groupsRef = collection(db, COLLECTIONS.PRODUCT_GROUPS);
-
 	// Remove undefined fields so Firestore doesn't reject them (e.g. optional description)
 	const cleanedGroup = Object.fromEntries(
 		Object.entries({
 			...group,
 			createdAt: group.createdAt || new Date().toISOString(),
 		}).filter(([_, value]) => value !== undefined),
-	);
+	) as Omit<ProductGroup, "id">;
 
-	const docRef = await addDoc(groupsRef, cleanedGroup as Omit<ProductGroup, "id">);
-	return docRef.id;
+	const id = await generateReadableId(COLLECTIONS.PRODUCT_GROUPS, "group");
+	const groupRef = doc(db, COLLECTIONS.PRODUCT_GROUPS, id);
+	await setDoc(groupRef, cleanedGroup);
+	return id;
 }
 
 export async function updateProductGroup(
@@ -387,12 +383,13 @@ export async function deleteProductGroup(id: string) {
 
 // Restock records operations
 export async function addRestockRecord(record: Omit<RestockRecord, "id">) {
-	const restocksRef = collection(db, COLLECTIONS.RESTOCKS);
-	const docRef = await addDoc(restocksRef, {
+	const id = await generateReadableId(COLLECTIONS.RESTOCKS, "restock");
+	const restockRef = doc(db, COLLECTIONS.RESTOCKS, id);
+	await setDoc(restockRef, {
 		...record,
 		createdAt: record.createdAt || new Date().toISOString(),
 	});
-	return docRef.id;
+	return id;
 }
 
 // Batch operations for multiple updates
@@ -409,9 +406,10 @@ export async function batchUpdateRawMaterials(
 import type { Order } from "@/lib/types";
 
 export async function addOrder(order: Omit<Order, "id">) {
-  const ordersRef = collection(db, COLLECTIONS.ORDERS);
-  const docRef = await addDoc(ordersRef, order);
-  return docRef.id;
+  const id = await generateReadableId(COLLECTIONS.ORDERS, "order");
+  const orderRef = doc(db, COLLECTIONS.ORDERS, id);
+  await setDoc(orderRef, order);
+  return id;
 }
 
 export async function updateOrder(id: string, updates: Partial<Order>) {

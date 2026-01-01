@@ -115,7 +115,10 @@ export function BatchStageProcessor({
     defaultValues: {
       batches: batches.map((b) => ({
         id: b.id,
-        accepted: b.processingStages[stage]?.accepted || 0,
+        accepted:
+          stage === "Assembling" && b.autoCreatedFromTestingRejected
+            ? (b.processingStages[stage]?.accepted ?? b.quantityToBuild ?? 0)
+            : (b.processingStages[stage]?.accepted || 0),
         rejected: showRejected ? (b.processingStages[stage]?.rejected || 0) : 0,
         materialConsumptions: b.materials
           .filter((m) => m.stage === stage)
@@ -136,7 +139,10 @@ export function BatchStageProcessor({
     form.reset({
       batches: batches.map((b) => ({
         id: b.id,
-        accepted: b.processingStages[stage]?.accepted || 0,
+        accepted:
+          stage === "Assembling" && b.autoCreatedFromTestingRejected
+            ? (b.processingStages[stage]?.accepted ?? b.quantityToBuild ?? 0)
+            : (b.processingStages[stage]?.accepted || 0),
         rejected: showRejected ? (b.processingStages[stage]?.rejected || 0) : 0,
         materialConsumptions: b.materials
           .filter((m) => m.stage === stage)
@@ -414,7 +420,7 @@ export function BatchStageProcessor({
     const processingStages: Record<ProcessingStageName, any> = {
       Molding: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
       Machining: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
-      Assembling: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
+      Assembling: { accepted: rejectedQty, rejected: 0, actualConsumption: 0, completed: false },
       Testing: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
     };
 
@@ -428,6 +434,7 @@ export function BatchStageProcessor({
       status: "Planned",
       processingStages,
       selectedProcesses: ["Assembling", "Testing"],
+      autoCreatedFromTestingRejected: true,
     });
 
     await addLog({
@@ -778,8 +785,12 @@ export function BatchStageProcessor({
               actualConsumption: formData.accepted + (showRejected ? (formData.rejected || 0) : 0),
             });
           } else {
+            const enforcedAccepted =
+              stage === "Assembling" && batch.autoCreatedFromTestingRejected
+                ? (batch.processingStages["Assembling"]?.accepted ?? batch.quantityToBuild ?? 0)
+                : formData.accepted;
             await updateBatchStage(batch.id, stage, {
-              accepted: formData.accepted,
+              accepted: enforcedAccepted,
               ...(showRejected ? { rejected: formData.rejected } : {}),
               materialConsumptions,
             });
@@ -946,8 +957,12 @@ export function BatchStageProcessor({
               actualConsumption: formData.accepted + (showRejected ? (formData.rejected || 0) : 0),
             });
           } else {
+            const enforcedAccepted =
+              stage === "Assembling" && batch.autoCreatedFromTestingRejected
+                ? (batch.processingStages["Assembling"]?.accepted ?? batch.quantityToBuild ?? 0)
+                : formData.accepted;
             await updateBatchStage(batch.id, stage, {
-              accepted: formData.accepted,
+              accepted: enforcedAccepted,
               ...(showRejected ? { rejected: formData.rejected } : {}),
               materialConsumptions,
             });
@@ -1151,8 +1166,12 @@ export function BatchStageProcessor({
               actualConsumption: totalConsumed,
             });
           } else {
+            const enforcedAccepted =
+              stage === "Assembling" && batch.autoCreatedFromTestingRejected
+                ? (batch.processingStages["Assembling"]?.accepted ?? batch.quantityToBuild ?? 0)
+                : formData.accepted;
             await updateBatchStage(batch.id, stage, {
-              accepted: formData.accepted,
+              accepted: enforcedAccepted,
               ...(showRejected ? { rejected: formData.rejected } : {}),
               materialConsumptions,
             });
@@ -1377,6 +1396,14 @@ export function BatchStageProcessor({
                           className="font-bold cursor-pointer select-none"
                           onClick={() => {
                             if (isAnyButtonDisabled) return;
+                            const shouldLockAccepted =
+                              stage === "Assembling" && (
+                                batch.autoCreatedFromTestingRejected ||
+                                ((batch.selectedProcesses?.[0] === "Assembling") &&
+                                  (Number(batch.processingStages?.["Assembling"]?.accepted ?? 0) === Number(batch.quantityToBuild ?? 0)) &&
+                                  Number(batch.quantityToBuild ?? 0) > 0)
+                              );
+                            if (shouldLockAccepted) return;
                             const fieldPath = `batches.${index}.accepted` as const;
                             const currentAccepted =
                               Number(form.getValues(fieldPath) as any) || 0;
@@ -1435,30 +1462,44 @@ export function BatchStageProcessor({
                               : 1
                           }
                         >
-                          <FormField
-                            control={form.control}
-                            name={`batches.${index}.accepted`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormControl>
-                                  <Input 
-                                    type="number" 
-                                    className={numberInputClassName}
-                                    {...field} 
-                                    disabled={isAnyButtonDisabled}
-                                    onChange={(e) => {
-                                      const rawValue = e.target.value;
-                                      const acceptedValue = Math.max(0, Number(rawValue) || 0);
-                                      // Normalize display value (strip leading zeros)
-                                      e.target.value = acceptedValue.toString();
-                                      field.onChange(acceptedValue);
-                                    }}
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
+                          {(() => {
+                            const lockAccepted =
+                              stage === "Assembling" && (
+                                batch.autoCreatedFromTestingRejected ||
+                                ((batch.selectedProcesses?.[0] === "Assembling") &&
+                                  (Number(batch.processingStages?.["Assembling"]?.accepted ?? 0) === Number(batch.quantityToBuild ?? 0)) &&
+                                  Number(batch.quantityToBuild ?? 0) > 0)
+                              );
+                            return lockAccepted ? (
+                            <div className="font-mono text-sm select-none">
+                              {String(form.getValues(`batches.${index}.accepted`) ?? batch.processingStages["Assembling"]?.accepted ?? batch.quantityToBuild ?? 0)}
+                            </div>
+                          ) : (
+                            <FormField
+                              control={form.control}
+                              name={`batches.${index}.accepted`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input 
+                                      type="number" 
+                                      className={numberInputClassName}
+                                      {...field} 
+                                      disabled={isAnyButtonDisabled}
+                                      onChange={(e) => {
+                                        const rawValue = e.target.value;
+                                        const acceptedValue = Math.max(0, Number(rawValue) || 0);
+                                        e.target.value = acceptedValue.toString();
+                                        field.onChange(acceptedValue);
+                                      }}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          );
+                          })()}
                         </TableCell>
                         {showRejected && (
                           <TableCell

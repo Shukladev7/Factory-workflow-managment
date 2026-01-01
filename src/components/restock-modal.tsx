@@ -50,8 +50,9 @@ export function RestockModal({
     resolver: zodResolver(restockSchema),
     defaultValues: {
       quantity: 1,
-      batchId: `BATCH-${Date.now()}`,
-      sku: `SKU-${Date.now()}`,
+      // Placeholders; actual batchId/sku can be set server-side when persisting
+      batchId: "batch_000",
+      sku: "sku_000",
 			companyName: "",
 			restockDate: new Date().toISOString().slice(0, 10),
     },

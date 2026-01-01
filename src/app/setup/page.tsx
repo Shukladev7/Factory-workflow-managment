@@ -46,12 +46,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ShieldX } from "lucide-react"
 
 const initialUnits: UnitOfMeasure[] = [
-  { id: "uom-1", name: "kg" },
-  { id: "uom-2", name: "coils" },
-  { id: "uom-3", name: "units" },
-  { id: "uom-4", name: "ingots" },
-  { id: "uom-5", name: "tons" },
-  { id: "uom-6", name: "meters" },
+  { id: "unit_001", name: "kg" },
+  { id: "unit_002", name: "coils" },
+  { id: "unit_003", name: "units" },
+  { id: "unit_004", name: "ingots" },
+  { id: "unit_005", name: "tons" },
+  { id: "unit_006", name: "meters" },
 ]
 
 export default function SetupPage() {
@@ -103,8 +103,14 @@ export default function SetupPage() {
       return
     }
 
+    // Generate next sequential unit ID like unit_007
+    const seq = units
+      .map((u) => (u.id.match(/^unit_(\d+)$/)?.[1] ? Number(u.id.match(/^unit_(\d+)$/)![1]) : 0))
+      .reduce((max, n) => Math.max(max, n), 0) + 1
+    const nextId = `unit_${String(seq).padStart(3, "0")}`
+
     const newUnitOfMeasure: UnitOfMeasure = {
-      id: `uom-${Date.now()}`,
+      id: nextId,
       name: newUnit.trim(),
     }
 

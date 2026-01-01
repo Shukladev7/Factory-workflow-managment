@@ -264,7 +264,8 @@ export default function MaterialsPage() {
 
   const transformMaterialRow = (row: any): RawMaterial => {
     return {
-      id: `mat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      // Placeholder only; actual ID will be assigned by Firestore
+      id: "material_000",
       name: row.name.trim(),
       sku: row.sku.trim(),
       quantity: Number(row.quantity),

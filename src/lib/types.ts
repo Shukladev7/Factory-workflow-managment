@@ -98,6 +98,7 @@ export interface Batch {
   status: BatchStatus;
   processingStages: Record<ProcessingStageName, ProcessingStage>;
   selectedProcesses: ProcessingStageName[];
+  autoCreatedFromTestingRejected?: boolean;
 }
 
 export interface UnitOfMeasure {

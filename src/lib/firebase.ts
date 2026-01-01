@@ -5,6 +5,7 @@ import {
   getDocs,
   getDoc,
   addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -14,6 +15,7 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import type { Batch, ProcessingStageName, BatchStatus } from "./types";
+import { generateReadableId } from "./id";
 
 // Collection reference
 const BATCHES_COLLECTION = "batches";
@@ -219,12 +221,16 @@ export async function createBatch(batch: Omit<Batch, "id">): Promise<string> {
     }
   }
 
-  const docRef = await addDoc(batchesRef, {
-    ...batch,
+  const id = await generateReadableId(BATCHES_COLLECTION, "batch");
+  const docRef = doc(db, BATCHES_COLLECTION, id);
+  const { id: _ignored, ...batchData } = batch as any;
+  await setDoc(docRef, {
+    ...batchData,
+    id,
     batchCode,
     createdAt: batch.createdAt || new Date().toISOString(),
   });
-  return docRef.id;
+  return id;
 }
 
 /**

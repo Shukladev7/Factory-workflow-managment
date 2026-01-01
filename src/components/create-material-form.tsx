@@ -33,13 +33,23 @@ interface CreateMaterialFormProps {
 
 export function CreateMaterialForm({ onMaterialCreated }: CreateMaterialFormProps) {
   const [unitsOfMeasure] = useLocalStorage<UnitOfMeasure[]>('unitsOfMeasure', [
-    { id: 'uom-1', name: 'kg' },
-    { id: 'uom-2', name: 'coils' },
-    { id: 'uom-3', name: 'units' },
-    { id: 'uom-4', name: 'ingots' },
-    { id: 'uom-5', name: 'tons' },
-    { id: 'uom-6', name: 'meters' },
+    { id: 'unit_001', name: 'kg' },
+    { id: 'unit_002', name: 'coils' },
+    { id: 'unit_003', name: 'units' },
+    { id: 'unit_004', name: 'ingots' },
+    { id: 'unit_005', name: 'tons' },
+    { id: 'unit_006', name: 'meters' },
   ]);
+  const unitOptions: UnitOfMeasure[] = (Array.isArray(unitsOfMeasure) && unitsOfMeasure.length > 0)
+    ? unitsOfMeasure
+    : [
+        { id: 'unit_001', name: 'kg' },
+        { id: 'unit_002', name: 'coils' },
+        { id: 'unit_003', name: 'units' },
+        { id: 'unit_004', name: 'ingots' },
+        { id: 'unit_005', name: 'tons' },
+        { id: 'unit_006', name: 'meters' },
+      ];
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -54,8 +64,8 @@ export function CreateMaterialForm({ onMaterialCreated }: CreateMaterialFormProp
   });
 
   useEffect(() => {
-    const newId = `mat-${Date.now()}`;
-    form.setValue('id', newId);
+    // Display placeholder; Firestore document ID will be generated on save
+    form.setValue('id', 'material_000');
   }, [form]);
 
   function onSubmit(values: z.infer<typeof formSchema>) {
@@ -133,7 +143,7 @@ export function CreateMaterialForm({ onMaterialCreated }: CreateMaterialFormProp
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {unitsOfMeasure.map((unit) => (
+                      {unitOptions.map((unit) => (
                         <SelectItem key={unit.id} value={unit.name}>
                           {unit.name}
                         </SelectItem>
