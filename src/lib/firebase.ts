@@ -62,31 +62,6 @@ async function generateBatchCode(stage: ProcessingStageName): Promise<string> {
   return `${prefix}${seq}`;
 }
 
-async function generateFailedTestBatchCode(): Promise<string> {
-  const batchesRef = collection(db, BATCHES_COLLECTION);
-  const prefix = "FT-";
-
-  // Find all batches with FT- prefix (failed tested batches)
-  const snapshot = await getDocs(batchesRef);
-
-  let maxSeq = 0;
-  snapshot.forEach((docSnap) => {
-    const data: any = docSnap.data();
-    const code: string | undefined = data.batchCode;
-    if (code && code.startsWith(prefix)) {
-      const tail = code.substring(prefix.length);
-      const num = parseInt(tail, 10);
-      if (!Number.isNaN(num) && num > maxSeq) {
-        maxSeq = num;
-      }
-    }
-  });
-
-  const next = maxSeq + 1;
-  const seq = String(next).padStart(3, "0");
-  return `${prefix}${seq}`;
-}
-
 /**
  * Get all batches from Firestore
  */
@@ -237,16 +212,7 @@ export async function createBatch(batch: Omit<Batch, "id">): Promise<string> {
       : undefined;
 
   let batchCode: string | undefined;
-  
-  // Check if this is a failed test batch (auto-created from testing rejected)
-  if ((batch as any).autoCreatedFromTestingRejected) {
-    try {
-      batchCode = await generateFailedTestBatchCode();
-    } catch (e) {
-      // Fallback: do not block creation if code generation fails
-      batchCode = undefined;
-    }
-  } else if (primaryStage) {
+  if (primaryStage) {
     try {
       batchCode = await generateBatchCode(primaryStage);
     } catch (e) {
