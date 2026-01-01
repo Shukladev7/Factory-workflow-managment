@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Batch, ProcessingStageName, ActivityLog } from "@/lib/types";
+import type { Batch, ProcessingStageName, ActivityLog, BatchMaterial } from "@/lib/types";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -33,6 +33,7 @@ import {
   subscribeToBatchesForStage,
   updateBatchStage,
   completeStage,
+  createBatch,
 } from "@/lib/firebase";
 import { useRawMaterials } from "@/hooks/use-raw-materials";
 import { useFinalStock } from "@/hooks/use-final-stock";
@@ -78,6 +79,7 @@ export function BatchStageProcessor({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEndingCycle, setIsEndingCycle] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [assemblySelections, setAssemblySelections] = useState<Record<string, Record<string, boolean>>>({});
   
   const { rawMaterials, mouldedMaterials, finishedMaterials, assembledMaterials, updateRawMaterial, deleteRawMaterial } =
     useRawMaterials();
@@ -289,6 +291,34 @@ export function BatchStageProcessor({
     return (batch.selectedProcesses || []) as ProcessingStageName[];
   };
 
+  const getAssemblyMaterialsForBatch = (batch: Batch): BatchMaterial[] => {
+    const product = getProductForBatch(batch);
+    const bom = product?.bom_per_piece || [];
+    const assemblyRows = bom.filter((row: any) => row.stage === "Assembling");
+
+    if (assemblyRows.length === 0) {
+      // Fallback: use any Assembling-stage materials already expanded on the batch itself
+      return batch.materials.filter((m) => m.stage === "Assembling");
+    }
+
+    const qtyToBuild = Math.max(1, Number(batch.quantityToBuild) || 1);
+
+    return assemblyRows.map((row: any) => {
+      const sourceMat = findStoreMaterialById(row.raw_material_id);
+      const name = sourceMat?.name || row.raw_material_id;
+      const qtyPerPiece = Number(row.qty_per_piece || 0);
+      const quantity = qtyPerPiece * qtyToBuild;
+
+      return {
+        id: row.raw_material_id,
+        name,
+        quantity,
+        unit: row.unit,
+        stage: "Assembling",
+      } as BatchMaterial;
+    });
+  };
+
   const getNextDepartment = (
     batch: Batch,
     currentStage: ProcessingStageName,
@@ -344,6 +374,73 @@ export function BatchStageProcessor({
           nextDept: nextDept || "Final Stock",
         };
     }
+  };
+
+  const createFailedAssemblyBatch = async (
+    originalBatch: Batch,
+    rejectedQty: number,
+    uncheckedAssemblyMaterials: BatchMaterial[],
+  ) => {
+    if (rejectedQty <= 0) return;
+    if (uncheckedAssemblyMaterials.length === 0) return;
+
+    console.log("[Testing] Creating failed Assembly batch:", {
+      originalBatchId: originalBatch.id,
+      rejectedQty,
+      uncheckedCount: uncheckedAssemblyMaterials.length,
+    });
+
+    const qtyToBuildOriginal = Math.max(1, Number(originalBatch.quantityToBuild) || 1);
+
+    const scaledMaterials = uncheckedAssemblyMaterials.map((mat) => {
+      const perPiece = qtyToBuildOriginal > 0
+        ? Number(mat.quantity || 0) / qtyToBuildOriginal
+        : 0;
+      const scaledQty = perPiece > 0 ? perPiece * rejectedQty : Number(mat.quantity || 0);
+      return {
+        id: mat.id,
+        name: mat.name,
+        quantity: scaledQty,
+        unit: mat.unit,
+        stage: "Assembling" as ProcessingStageName,
+      };
+    });
+
+    const totalMaterialQuantity = scaledMaterials.reduce(
+      (sum, m) => sum + Number(m.quantity || 0),
+      0,
+    );
+
+    const processingStages: Record<ProcessingStageName, any> = {
+      Molding: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
+      Machining: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
+      Assembling: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
+      Testing: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
+    };
+
+    const newBatchId = await createBatch({
+      productId: originalBatch.productId,
+      productName: originalBatch.productName,
+      quantityToBuild: rejectedQty,
+      totalMaterialQuantity,
+      materials: scaledMaterials,
+      createdAt: new Date().toISOString(),
+      status: "Planned",
+      processingStages,
+      selectedProcesses: ["Assembling", "Testing"],
+    });
+
+    await addLog({
+      recordId: newBatchId,
+      recordType: "Batch",
+      action: "Created",
+      details: `Failed Assembly batch created from Testing batch ${originalBatch.batchCode || originalBatch.id} for ${rejectedQty} rejected units.`,
+    });
+
+    toast({
+      title: "Failed Assembly Batch Created",
+      description: `Created Assembly batch ${newBatchId} for ${rejectedQty} rejected units from Testing batch ${originalBatch.batchCode || originalBatch.id}.`,
+    });
   };
 
   const labels = getStageLabels(stage);
@@ -762,6 +859,30 @@ export function BatchStageProcessor({
           }
 
           await completeStage(batch.id, stage);
+
+          if (stage === "Testing") {
+            const rejectedQty = Number((formData as any).rejected || 0);
+            if (rejectedQty > 0) {
+              const assemblyMaterials = getAssemblyMaterialsForBatch(batch);
+              const selectionForBatch = assemblySelections[batch.id] || {};
+              const uncheckedMaterials = assemblyMaterials.filter(
+                (mat) => !selectionForBatch[mat.id],
+              );
+
+              if (uncheckedMaterials.length > 0) {
+                try {
+                  await createFailedAssemblyBatch(batch, rejectedQty, uncheckedMaterials);
+                } catch (error) {
+                  console.error("Failed to create failed Assembly batch from Testing:", error);
+                  toast({
+                    variant: "destructive",
+                    title: "Failed to Create Failed Assembly Batch",
+                    description: "An error occurred while creating the failed Assembly batch. Please check console logs or try again.",
+                  });
+                }
+              }
+            }
+          }
         }
       }
 
@@ -969,6 +1090,39 @@ export function BatchStageProcessor({
         return
       }
 
+      if (stage === "Testing") {
+        let hasAssemblySelectionError = false;
+        for (const batch of selectedTargetBatches) {
+          const formData = values.batches.find((b) => b.id === batch.id);
+          if (!formData) continue;
+
+          const rejectedQty = Number((formData as any).rejected || 0);
+          if (rejectedQty <= 0) continue;
+
+          const assemblyMaterials = getAssemblyMaterialsForBatch(batch);
+          if (assemblyMaterials.length === 0) continue;
+
+          const selectionForBatch = assemblySelections[batch.id] || {};
+          const uncheckedMaterials = assemblyMaterials.filter(
+            (mat) => !selectionForBatch[mat.id],
+          );
+
+          if (uncheckedMaterials.length === 0) {
+            hasAssemblySelectionError = true;
+            break;
+          }
+        }
+
+        if (hasAssemblySelectionError) {
+          toast({
+            variant: "destructive",
+            title: "Invalid Assembly Material Selection",
+            description: "At least one assembly material must be left unchecked for rejected units.",
+          });
+          return;
+        }
+      }
+
       // Note: Acceptance limits are intentionally not enforced here per user request.
 
       // No upper bound validation for accepted quantity; it can be any non-negative value.
@@ -1066,33 +1220,44 @@ export function BatchStageProcessor({
 
           await completeStage(batch.id, stage);
         }
+
+        if (stage === "Testing") {
+          const rejectedQty = Number((formData as any).rejected || 0);
+          if (rejectedQty > 0) {
+            const assemblyMaterials = getAssemblyMaterialsForBatch(batch);
+            if (assemblyMaterials.length > 0) {
+              const selectionForBatch = assemblySelections[batch.id] || {};
+              const uncheckedMaterials = assemblyMaterials.filter(
+                (mat) => !selectionForBatch[mat.id],
+              );
+
+              if (uncheckedMaterials.length > 0) {
+                try {
+                  await createFailedAssemblyBatch(batch, rejectedQty, uncheckedMaterials);
+                } catch (error) {
+                  console.error("Failed to create failed Assembly batch from Testing:", error);
+                  toast({
+                    variant: "destructive",
+                    title: "Failed to Create Failed Assembly Batch",
+                    description: "An error occurred while creating the failed Assembly batch. Please check console logs or try again.",
+                  });
+                }
+              }
+            }
+          }
+        }
       }
-
-      // Check if any batch has a product with only Molding + Machining manufacturing stages
-      const hasProductWithMoldingAndMachiningOnly = batchesWithThisAsLastStage.some((batch) => {
-        const product = finalStock.find(p => p.name === batch.productName);
-        const productManufacturingStages = product?.manufacturingStages || [];
-        return productManufacturingStages.length === 2 && 
-          productManufacturingStages.includes("Molding") && productManufacturingStages.includes("Machining");
-      });
-
-      const hasMachiningOnlyBatch = batchesWithThisAsLastStage.some((batch) => {
-        const selectedProcesses = batch.selectedProcesses || [];
-        return selectedProcesses.length === 1 && selectedProcesses[0] === "Machining";
-      });
 
       toast({
         title: "Batch Finished",
         description:
           stage === "Molding"
             ? "Moulding completed. Items have been added to Store."
-            : stage === "Machining" && hasProductWithMoldingAndMachiningOnly
-              ? "Machining completed. Items have been added to Final Stock (Product has only Molding + Machining stages)."
-              : stage === "Machining" && hasMachiningOnlyBatch
-                ? "Machining completed. Items have been added to Final Stock."
-                : stage === "Testing"
-                  ? "Testing completed. Final product added to Final Stock."
-                  : "Stage completed.",
+            : stage === "Machining"
+              ? "Machining completed. Items have been updated."
+              : stage === "Testing"
+                ? "Testing completed. Final product updated."
+                : "Stage completed.",
       });
     } finally {
       setIsFinishing(false);
@@ -1167,6 +1332,9 @@ export function BatchStageProcessor({
                   const materialsForStage = batch.materials.filter(
                     (m) => m.stage === stage,
                   );
+                  const assemblyMaterials = stage === "Testing"
+                    ? getAssemblyMaterialsForBatch(batch)
+                    : [];
                   const product = finalStock.find(
                     (p) => p.name === batch.productName,
                   );
@@ -1406,6 +1574,62 @@ export function BatchStageProcessor({
                           </TableRow>
                         );
                       })}
+
+                      {stage === "Testing" && (
+                        <TableRow className="bg-muted/30">
+                          <TableCell colSpan={totalColumns}>
+                            <div className="mt-2 rounded-md border p-3">
+                              <div className="mb-2 text-sm font-semibold">
+                                Assembly Input Materials
+                              </div>
+                              {assemblyMaterials.length === 0 ? (
+                                <div className="text-xs text-muted-foreground">
+                                  No assembly materials found for this batch.
+                                </div>
+                              ) : (
+                                <div className="space-y-1">
+                                  {assemblyMaterials.map((mat) => {
+                                    const selectionForBatch = assemblySelections[batch.id] || {};
+                                    const isOk = !!selectionForBatch[mat.id];
+
+                                    return (
+                                      <div
+                                        key={mat.id}
+                                        className="flex items-center gap-3 text-xs"
+                                      >
+                                        <Checkbox
+                                          checked={isOk}
+                                          onCheckedChange={(checked) => {
+                                            setAssemblySelections((prev) => {
+                                              const current = prev[batch.id] || {};
+                                              const next = { ...current };
+                                              if (checked) {
+                                                next[mat.id] = true;
+                                              } else {
+                                                delete next[mat.id];
+                                              }
+                                              return { ...prev, [batch.id]: next };
+                                            });
+                                          }}
+                                          disabled={isAnyButtonDisabled}
+                                        />
+                                        <div>
+                                          <div className="font-medium">
+                                            {mat.name || mat.id}
+                                          </div>
+                                          <div className="font-mono text-[10px] text-muted-foreground">
+                                            Raw Material ID: {mat.id}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </>
                   );
                 })}
