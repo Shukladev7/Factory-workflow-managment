@@ -476,15 +476,19 @@ export function BatchStageProcessor({
           (mc) => mc.materialId === materialInBatch.id
         );
         
-        // Default to Accepted × (BOM qty per piece). We approximate per-piece as
-        // materialInBatch.quantity / batch.quantityToBuild when BOM is pre-expanded for the batch size.
-        const perPiece = Number(batch.quantityToBuild) > 0
-          ? Number(materialInBatch.quantity || 0) / Number(batch.quantityToBuild)
-          : 0
-        const defaultConsumption = Math.max(0, Number(acceptedUnits || 0) * perPiece)
-        const consumptionAmount = consumptionData && Number(consumptionData.actualConsumption) > 0
-          ? Number(consumptionData.actualConsumption)
-          : defaultConsumption
+        // Use Actual Consumption if provided (even if 0), otherwise default to Accepted × (BOM qty per piece)
+        // We approximate per-piece as materialInBatch.quantity / batch.quantityToBuild when BOM is pre-expanded for the batch size.
+        let consumptionAmount: number;
+        if (consumptionData !== undefined) {
+          // Actual Consumption was provided - use it regardless of value (even if 0)
+          consumptionAmount = Math.max(0, Number(consumptionData.actualConsumption || 0));
+        } else {
+          // No Actual Consumption provided - calculate default based on accepted units
+          const perPiece = Number(batch.quantityToBuild) > 0
+            ? Number(materialInBatch.quantity || 0) / Number(batch.quantityToBuild)
+            : 0;
+          consumptionAmount = Math.max(0, Number(acceptedUnits || 0) * perPiece);
+        }
         
         const oldQuantity = Number(inv.item.quantity || 0);
         const newQuantity = Math.max(0, oldQuantity - consumptionAmount); // Ensure quantity doesn't go negative
