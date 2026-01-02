@@ -75,26 +75,41 @@ export default function TestingPage() {
   }
 
   const testingCandidates = useMemo(() => {
-    const rows: Array<{ material: RawMaterial; type: "moulded" | "machined" | "assembled"; product: FinalStock }> = []
+    const rows: Array<{ material: RawMaterial; type: "moulded" | "machined" | "assembled"; product: FinalStock; urgency: number }> = []
     mouldedMaterials.forEach((m) => {
       const product = getProductForMaterial(m, "moulded")
       if (!product) return
       const next = getNextStageAfter(product, "Molding")
-      if (next === "Testing") rows.push({ material: m, type: "moulded", product })
+      if (next === "Testing") {
+        const productThreshold = product.mouldedThreshold
+        const threshold = (m.threshold && m.threshold > 0) ? m.threshold : (productThreshold ?? 0)
+        const urgency = Number(m.quantity ?? 0) - Number(threshold ?? 0)
+        rows.push({ material: m, type: "moulded", product, urgency })
+      }
     })
     finishedMaterials.forEach((m) => {
       const product = getProductForMaterial(m, "machined")
       if (!product) return
       const next = getNextStageAfter(product, "Machining")
-      if (next === "Testing") rows.push({ material: m, type: "machined", product })
+      if (next === "Testing") {
+        const productThreshold = product.machinedThreshold
+        const threshold = (m.threshold && m.threshold > 0) ? m.threshold : (productThreshold ?? 0)
+        const urgency = Number(m.quantity ?? 0) - Number(threshold ?? 0)
+        rows.push({ material: m, type: "machined", product, urgency })
+      }
     })
     assembledMaterials.forEach((m) => {
       const product = getProductForMaterial(m, "assembled")
       if (!product) return
       const next = getNextStageAfter(product, "Assembling")
-      if (next === "Testing") rows.push({ material: m, type: "assembled", product })
+      if (next === "Testing") {
+        const productThreshold = product.assembledThreshold
+        const threshold = (m.threshold && m.threshold > 0) ? m.threshold : (productThreshold ?? 0)
+        const urgency = Number(m.quantity ?? 0) - Number(threshold ?? 0)
+        rows.push({ material: m, type: "assembled", product, urgency })
+      }
     })
-    return rows
+    return rows.sort((a, b) => a.urgency - b.urgency)
   }, [mouldedMaterials, finishedMaterials, assembledMaterials, finalStock])
 
   const displayThresholdFor = (material: RawMaterial, product: FinalStock, type: "moulded" | "machined" | "assembled") => {

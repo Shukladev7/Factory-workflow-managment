@@ -35,14 +35,14 @@ function getStageCode(stage: ProcessingStageName): string {
   }
 }
 
-async function generateBatchCode(stage: ProcessingStageName): Promise<string> {
+async function generateBatchCode(stage: ProcessingStageName, isFailedTesting?: boolean): Promise<string> {
   const batchesRef = collection(db, BATCHES_COLLECTION);
-  const stageCode = getStageCode(stage);
-  const prefix = `BATCH-${stageCode}-`;
+  
+  // Use FT- prefix for auto-created assembly batches from testing rejects
+  const prefix = isFailedTesting ? "FT-" : `BATCH-${getStageCode(stage)}-`;
 
-  // Find all batches that include this stage and already have a batchCode with this prefix
-  const q = query(batchesRef, where("selectedProcesses", "array-contains", stage));
-  const snapshot = await getDocs(q);
+  // Find all batches that already have a batchCode with this prefix
+  const snapshot = await getDocs(batchesRef);
 
   let maxSeq = 0;
   snapshot.forEach((docSnap) => {
@@ -230,7 +230,9 @@ export async function createBatch(batch: Omit<Batch, "id">): Promise<string> {
   let batchCode: string | undefined;
   if (primaryStage) {
     try {
-      batchCode = await generateBatchCode(primaryStage);
+      // Use FT- prefix for auto-created assembly batches from testing rejects
+      const isFailedTesting = batch.autoCreatedFromTestingRejected === true && primaryStage === "Assembling";
+      batchCode = await generateBatchCode(primaryStage, isFailedTesting);
     } catch (e) {
       // Fallback: do not block creation if code generation fails
       batchCode = undefined;

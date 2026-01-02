@@ -126,37 +126,39 @@ export default function MachiningPage() {
     }
   }
 
-  const items = useMemo(() => {
-    const enriched = finishedMaterials.map((m) => {
+  const allItems = useMemo(() => {
+    // Process material items
+    const materialItems = finishedMaterials.map((m) => {
       const product = getProductForMaterial(m)
       const productThreshold = product?.machinedThreshold
       const threshold = (m.threshold && m.threshold > 0) ? m.threshold : (productThreshold ?? 0)
       const urgency = Number(m.quantity ?? 0) - Number(threshold ?? 0)
-      return { material: m, product, threshold, urgency }
+      return { type: "material" as const, material: m, product, threshold, urgency }
     })
-    return enriched.sort((a, b) => a.urgency - b.urgency)
-  }, [finishedMaterials, finalStock])
 
-  const finalItems = useMemo(() => {
-    if (!finalStock) return [] as Array<{ product: FinalStock; quantity: number; threshold: number; urgency: number }>
+    // Process final stock items
     const finalStage: ProcessingStageName = "Machining"
-    return finalStock
-      .filter(
-        (p) =>
-          Array.isArray(p.manufacturingStages) &&
-          p.manufacturingStages.length > 0 &&
-          p.manufacturingStages[p.manufacturingStages.length - 1] === finalStage
-      )
-      .map((p) => {
-        const batchesQty = (p.batches || []).reduce((s, b) => s + Number(b.quantity || 0), 0)
-        const quantity = (p.batches && p.batches.length > 0) ? batchesQty : Number(p.quantity || 0)
-        const stageThreshold = p.machinedThreshold
-        const threshold = (stageThreshold && stageThreshold > 0) ? stageThreshold : (p.threshold ?? 0)
-        const urgency = Number(quantity) - Number(threshold ?? 0)
-        return { product: p, quantity, threshold, urgency }
-      })
-      .sort((a, b) => a.urgency - b.urgency)
-  }, [finalStock])
+    const finalStockItems = finalStock
+      ? finalStock
+          .filter(
+            (p) =>
+              Array.isArray(p.manufacturingStages) &&
+              p.manufacturingStages.length > 0 &&
+              p.manufacturingStages[p.manufacturingStages.length - 1] === finalStage
+          )
+          .map((p) => {
+            const batchesQty = (p.batches || []).reduce((s, b) => s + Number(b.quantity || 0), 0)
+            const quantity = (p.batches && p.batches.length > 0) ? batchesQty : Number(p.quantity || 0)
+            const stageThreshold = p.machinedThreshold
+            const threshold = (stageThreshold && stageThreshold > 0) ? stageThreshold : (p.threshold ?? 0)
+            const urgency = Number(quantity) - Number(threshold ?? 0)
+            return { type: "final" as const, product: p, quantity, threshold, urgency }
+          })
+      : []
+
+    // Combine and sort by urgency
+    return [...materialItems, ...finalStockItems].sort((a, b) => a.urgency - b.urgency)
+  }, [finishedMaterials, finalStock])
 
   const handleCreateBatch = async (material: RawMaterial) => {
     const product = getProductForMaterial(material)
@@ -295,76 +297,83 @@ export default function MachiningPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map(({ material, product, threshold }) => (
-                <TableRow key={material.id}>
-                  <TableCell className="font-mono text-xs">{material.id}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {product ? (product.productId || product.id) : "—"}
-                  </TableCell>
-                  <TableCell className="font-medium">{material.name}</TableCell>
-                  <TableCell className="font-mono text-xs">{material.sku}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{material.quantity.toLocaleString()} {material.unit}</Badge>
-                  </TableCell>
-                  <TableCell>{threshold ?? 0}</TableCell>
-                  <TableCell>{renderStatus(Number(material.quantity ?? 0), Number(threshold ?? 0))}</TableCell>
-                  <TableCell>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button size="sm">Create Batch</Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Create batch?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Are you sure you want to create a batch for {product ? product.name : material.name} in the Machining stage?
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleCreateBatch(material)}>
-                            Confirm
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {finalItems.map(({ product, quantity, threshold }) => (
-                <TableRow key={`final-${product.id}`}>
-                  <TableCell className="font-mono text-xs">{product.id}</TableCell>
-                  <TableCell className="font-mono text-xs">{product.productId || product.id}</TableCell>
-                  <TableCell className="font-medium">{product.name}</TableCell>
-                  <TableCell className="font-mono text-xs">{product.sku}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{Number(quantity).toLocaleString()} pcs</Badge>
-                  </TableCell>
-                  <TableCell>{threshold ?? 0}</TableCell>
-                  <TableCell>{renderStatus(Number(quantity ?? 0), Number(threshold ?? 0))}</TableCell>
-                  <TableCell>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button size="sm">Create Batch</Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Create batch?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Are you sure you want to create a batch for {product.name} in the Machining stage?
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleCreateFinalBatch(product)}>
-                            Confirm
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {allItems.map((item) => {
+                if (item.type === "material") {
+                  const { material, product, threshold } = item
+                  return (
+                    <TableRow key={material.id}>
+                      <TableCell className="font-mono text-xs">{material.id}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {product ? (product.productId || product.id) : "—"}
+                      </TableCell>
+                      <TableCell className="font-medium">{material.name}</TableCell>
+                      <TableCell className="font-mono text-xs">{material.sku}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{material.quantity.toLocaleString()} {material.unit}</Badge>
+                      </TableCell>
+                      <TableCell>{threshold ?? 0}</TableCell>
+                      <TableCell>{renderStatus(Number(material.quantity ?? 0), Number(threshold ?? 0))}</TableCell>
+                      <TableCell>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm">Create Batch</Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Create batch?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to create a batch for {product ? product.name : material.name} in the Machining stage?
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleCreateBatch(material)}>
+                                Confirm
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
+                    </TableRow>
+                  )
+                } else {
+                  const { product, quantity, threshold } = item
+                  return (
+                    <TableRow key={`final-${product.id}`}>
+                      <TableCell className="font-mono text-xs">{product.id}</TableCell>
+                      <TableCell className="font-mono text-xs">{product.productId || product.id}</TableCell>
+                      <TableCell className="font-medium">{product.name}</TableCell>
+                      <TableCell className="font-mono text-xs">{product.sku}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{Number(quantity).toLocaleString()} pcs</Badge>
+                      </TableCell>
+                      <TableCell>{threshold ?? 0}</TableCell>
+                      <TableCell>{renderStatus(Number(quantity ?? 0), Number(threshold ?? 0))}</TableCell>
+                      <TableCell>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm">Create Batch</Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Create batch?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to create a batch for {product.name} in the Machining stage?
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handleCreateFinalBatch(product)}>
+                                Confirm
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
+                    </TableRow>
+                  )
+                }
+              })}
             </TableBody>
           </Table>
           </CardContent>
