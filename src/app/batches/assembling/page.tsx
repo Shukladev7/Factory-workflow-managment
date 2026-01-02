@@ -1,16 +1,16 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import PageHeader from "@/components/page-header"
 import { BatchStageProcessor } from "@/components/batch-stage-processor"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useRawMaterials } from "@/hooks/use-raw-materials"
 import { useFinalStock } from "@/hooks/use-final-stock"
 import type { RawMaterial, FinalStock, Batch, ProcessingStageName } from "@/lib/types"
-import { AlertTriangle, XCircle } from "lucide-react"
+import { AlertTriangle, XCircle, ChevronDown, ChevronUp } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createBatch } from "@/lib/firebase"
 import {
@@ -29,6 +29,7 @@ export default function AssemblingPage() {
   const { assembledMaterials, rawMaterials } = useRawMaterials()
   const { finalStock } = useFinalStock()
   const { toast } = useToast()
+  const [isItemsExpanded, setIsItemsExpanded] = useState(true)
 
   const getProductForMaterial = (material: RawMaterial): FinalStock | null => {
     if (!finalStock || finalStock.length === 0) return null
@@ -258,8 +259,29 @@ export default function AssemblingPage() {
         description="Process batches in the assembling stage. Log accepted units."
       />
       <Card>
-        <CardContent className="pt-6">
-          <Table>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+          <CardTitle>Items List</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsItemsExpanded(!isItemsExpanded)}
+          >
+            {isItemsExpanded ? (
+              <>
+                <ChevronUp className="h-4 w-4 mr-2" />
+                Collapse
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-4 w-4 mr-2" />
+                Expand
+              </>
+            )}
+          </Button>
+        </CardHeader>
+        {isItemsExpanded && (
+          <CardContent className="pt-6">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>System ID</TableHead>
@@ -345,7 +367,8 @@ export default function AssemblingPage() {
               ))}
             </TableBody>
           </Table>
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
       <BatchStageProcessor stage="Assembling" previousStage="Machining" />
     </>

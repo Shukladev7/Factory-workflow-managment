@@ -3,11 +3,12 @@
 import PageHeader from "@/components/page-header"
 import { BatchStageProcessor } from "@/components/batch-stage-processor"
 import { useEffect, useMemo, useState } from "react"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { FinalStock, ProcessingStageName, RawMaterial } from "@/lib/types"
+import { ChevronDown, ChevronUp } from "lucide-react"
 import { useRawMaterials } from "@/hooks/use-raw-materials"
 import { useFinalStock } from "@/hooks/use-final-stock"
 import { useToast } from "@/hooks/use-toast"
@@ -31,6 +32,7 @@ export default function TestingPage() {
   const { toast } = useToast()
   const { createActivityLog } = useActivityLog()
   const [isClient, setIsClient] = useState(false)
+  const [isItemsExpanded, setIsItemsExpanded] = useState(true)
 
   useEffect(() => setIsClient(true), [])
 
@@ -150,8 +152,29 @@ export default function TestingPage() {
       />
 
       <Card>
-        <CardContent className="pt-6">
-          <Table>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+          <CardTitle>Items List</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsItemsExpanded(!isItemsExpanded)}
+          >
+            {isItemsExpanded ? (
+              <>
+                <ChevronUp className="h-4 w-4 mr-2" />
+                Collapse
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-4 w-4 mr-2" />
+                Expand
+              </>
+            )}
+          </Button>
+        </CardHeader>
+        {isItemsExpanded && (
+          <CardContent className="pt-6">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>System ID</TableHead>
@@ -216,7 +239,8 @@ export default function TestingPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
 
       <BatchStageProcessor stage="Testing" previousStage="Assembling" />
