@@ -32,7 +32,8 @@ const formSchema = z.object({
   gstRate: z.coerce.number().min(0, "GST Rate must be 0 or greater."),
   threshold: z.coerce.number().min(0, "Threshold must be 0 or greater.").default(0),
   imageUrl: z.string().optional(),
-  imageHint: z.string(),
+  imageHint: z.string().optional(),
+  measurementSketch: z.string().optional(),
   hasManufacturingDetails: z.boolean().default(true),
 });
 
@@ -60,6 +61,7 @@ export function CreateProductForm({
       threshold: 0,
       imageUrl: "",
       imageHint: "",
+      measurementSketch: "",
       hasManufacturingDetails: true,
     },
   });
@@ -101,7 +103,7 @@ export function CreateProductForm({
       }
 
       const url = await uploadImage(file, "measurement-sketches");
-      form.setValue("measurementSketch" as any, url);
+      form.setValue("measurementSketch", url);
     } catch (error) {
       console.error("[CreateProductForm] Measurement sketch upload failed:", error);
       toast({
@@ -126,7 +128,7 @@ export function CreateProductForm({
       );
     }
 
-    const measurementSketch = form.getValues("measurementSketch" as any) as
+    const measurementSketch = form.getValues("measurementSketch") as
       | string
       | undefined;
 
@@ -210,8 +212,8 @@ export function CreateProductForm({
       id: "",
       ...values,
       manufacturingStages: hasManufacturingDetails ? manufacturingStages : [],
-      imageUrl: values.imageUrl || "/placeholder.svg",
-      measurementSketch,
+      imageUrl: values.imageUrl || undefined,
+      measurementSketch: measurementSketch || undefined,
       ...(hasManufacturingDetails && sanitizedBomRows.length > 0 ? { bom_per_piece: sanitizedBomRows } : {}),
       mouldedThreshold: unitThresholds.moulded ?? 0,
       machinedThreshold: unitThresholds.machined ?? 0,
@@ -321,6 +323,7 @@ export function CreateProductForm({
             name="imageUrl"
             render={({ field }) => (
               <FormItem>
+                <FormLabel>Product Image (Optional)</FormLabel>
                 <FormControl>
                   <ImageUpload
                     value={field.value}
@@ -336,10 +339,10 @@ export function CreateProductForm({
 
           <FormField
             control={form.control}
-            name={"measurementSketch" as any}
+            name="measurementSketch"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Measurement Sketch</FormLabel>
+                <FormLabel>Measurement Sketch (Optional)</FormLabel>
                 <FormControl>
                   <div className="flex items-center gap-4">
                     <Input

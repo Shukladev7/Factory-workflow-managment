@@ -241,9 +241,9 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
       imageUrl:
         values.imageUrl && values.imageUrl.length > 0
           ? values.imageUrl
-          : product.imageUrl ?? "/placeholder.svg",
+          : product.imageUrl ?? undefined,
       imageHint: values.imageHint ?? product.imageHint,
-      measurementSketch: values.measurementSketch ?? product.measurementSketch,
+      measurementSketch: values.measurementSketch ?? product.measurementSketch ?? undefined,
       // attach bom_per_piece only if valid rows exist
       bom_per_piece: adjustedBomRows.length > 0 ? adjustedBomRows : undefined,
     };
@@ -274,7 +274,7 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
           name="measurementSketch"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Measurement Sketch</FormLabel>
+              <FormLabel>Measurement Sketch (Optional)</FormLabel>
               <FormControl>
                 <div className="flex items-center gap-4">
                   <Input
@@ -377,6 +377,7 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
           name="imageUrl"
           render={({ field }) => (
             <FormItem>
+              <FormLabel>Product Image (Optional)</FormLabel>
               <FormControl>
                 <ImageUpload
                   value={field.value}

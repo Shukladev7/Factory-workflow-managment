@@ -117,7 +117,15 @@ export async function getBatchesForStage(
 
     // Check if previous stage is completed
     const previousStage = batch.selectedProcesses[currentStageIndex - 1];
-    return batch.processingStages[previousStage]?.completed === true;
+    const previousStageCompleted = batch.processingStages[previousStage]?.completed === true;
+    
+    // Prevent automatic progression from Assembling to Testing
+    if (stage === "Testing" && previousStage === "Assembling" && previousStageCompleted) {
+      // Only show in Testing if the Testing stage has been explicitly started
+      return batch.processingStages[stage]?.startedAt !== undefined;
+    }
+    
+    return previousStageCompleted;
   });
 }
 
@@ -170,7 +178,15 @@ export function subscribeToBatchesForStage(
 
       // Check if previous stage is completed
       const previousStage = batch.selectedProcesses[currentStageIndex - 1];
-      return batch.processingStages?.[previousStage]?.completed === true;
+      const previousStageCompleted = batch.processingStages?.[previousStage]?.completed === true;
+      
+      // Prevent automatic progression from Assembling to Testing
+      if (stage === "Testing" && previousStage === "Assembling" && previousStageCompleted) {
+        // Only show in Testing if the Testing stage has been explicitly started
+        return batch.processingStages?.[stage]?.startedAt !== undefined;
+      }
+      
+      return previousStageCompleted;
     });
 
     console.log(
@@ -369,9 +385,14 @@ export async function completeStage(
   } else {
     updates.status = "In Progress";
 
-    // Start the next stage
+    // Start the next stage, but skip automatic progression from Assembling to Testing
     const nextStage = batch.selectedProcesses[currentStageIndex + 1];
-    updates[`processingStages.${nextStage}.startedAt`] = now;
+    if (stage === "Assembling" && nextStage === "Testing") {
+      // Don't automatically start Testing stage after Assembly completes
+      // Batches will need to be manually moved to Testing
+    } else {
+      updates[`processingStages.${nextStage}.startedAt`] = now;
+    }
   }
 
   console.log("[v0] Completing stage with updates:", updates);
