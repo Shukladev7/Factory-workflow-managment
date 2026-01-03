@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { useRawMaterials } from "@/hooks/use-raw-materials"
 import { useActivityLog } from "@/hooks/use-activity-log"
 import { usePermissions } from "@/hooks/use-permissions"
+import { useBatches } from "@/hooks/use-batches"
 import {
   Dialog,
   DialogContent,
@@ -33,6 +34,7 @@ export default function MaterialsPage() {
   const { regularMaterials, createRawMaterial, updateRawMaterial, deleteRawMaterial } = useRawMaterials()
   const { activityLog, createActivityLog } = useActivityLog()
   const { canEdit } = usePermissions()
+  const { batches } = useBatches()
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<RawMaterial | null>(null)
   const [restockItem, setRestockItem] = useState<RawMaterial | null>(null)
@@ -441,6 +443,7 @@ export default function MaterialsPage() {
           activityLog={activityLog.filter((log) => log.recordId === selectedItem.id)}
           onItemUpdate={handleMaterialUpdated}
           onItemDelete={handleMaterialDeleted}
+          batches={batches || []}
         />
       )}
       {restockItem && (

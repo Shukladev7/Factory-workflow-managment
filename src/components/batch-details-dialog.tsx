@@ -104,7 +104,7 @@ export function BatchDetailsDialog({
     onBatchDelete(batch.id)
   }
 
-  const displayBatchId = batch.batchCode || batch.id
+  const displayBatchId = batch.batchId || batch.batchCode || batch.id
 
   const getStageLabels = (stageName: ProcessingStageName) => {
     switch (stageName) {

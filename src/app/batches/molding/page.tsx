@@ -106,7 +106,7 @@ export default function MoldingPage() {
       Testing: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
     }
 
-    const batch: Omit<Batch, "id"> = {
+    const batch: Omit<Batch, "id" | "batchId"> = {
       productId: product.id,
       productName: product.name,
       quantityToBuild,
@@ -216,7 +216,7 @@ export default function MoldingPage() {
       Testing: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
     }
 
-    const batch: Omit<Batch, "id"> = {
+    const batch: Omit<Batch, "id" | "batchId"> = {
       productId: product.id,
       productName: product.name,
       quantityToBuild,

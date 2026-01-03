@@ -11,13 +11,14 @@ import {
   DialogFooter
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { type RawMaterial, type ActivityLog, type FinalStock } from '@/lib/types';
+import { type RawMaterial, type ActivityLog, type FinalStock, type Batch } from '@/lib/types';
 import { Button } from './ui/button';
 import { EditMaterialForm } from './edit-material-form';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { ActivityLogList } from './activity-log-list';
 import Image from 'next/image';
 import { EditProductForm } from './edit-product-form';
+import { InventoryTracking } from './inventory-tracking';
 
 type Item = RawMaterial | FinalStock;
 type ItemType = 'RawMaterial' | 'FinalStock';
@@ -30,6 +31,7 @@ interface ItemDetailsDialogProps<T extends Item> {
   activityLog: ActivityLog[];
   onItemUpdate: (item: T) => void;
   onItemDelete: (id: string) => void;
+  batches?: Batch[]; // Optional batches for batch name lookup in inventory tracking
 }
 
 export function ItemDetailsDialog<T extends Item>({
@@ -40,6 +42,7 @@ export function ItemDetailsDialog<T extends Item>({
   activityLog,
   onItemUpdate,
   onItemDelete,
+  batches = [],
 }: ItemDetailsDialogProps<T>) {
   const [isEditing, setIsEditing] = useState(false);
 
@@ -110,7 +113,7 @@ export function ItemDetailsDialog<T extends Item>({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? `Edit ${item.name}` : item.name}</DialogTitle>
           <DialogDescription>
@@ -124,6 +127,7 @@ export function ItemDetailsDialog<T extends Item>({
             <Tabs defaultValue="details" className="pt-4">
                 <TabsList>
                     <TabsTrigger value="details">Details</TabsTrigger>
+                    <TabsTrigger value="inventory">Inventory</TabsTrigger>
                     <TabsTrigger value="log">Activity Log</TabsTrigger>
                 </TabsList>
                 <TabsContent value="details" className="mt-4">
@@ -149,6 +153,14 @@ export function ItemDetailsDialog<T extends Item>({
                         </AlertDialog>
                         <Button onClick={() => setIsEditing(true)}>Edit</Button>
                     </DialogFooter>
+                </TabsContent>
+                <TabsContent value="inventory" className="mt-4">
+                    <InventoryTracking
+                        item={item}
+                        itemType={itemType}
+                        activityLog={activityLog}
+                        batches={batches}
+                    />
                 </TabsContent>
                 <TabsContent value="log">
                     <ActivityLogList log={activityLog} />

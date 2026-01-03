@@ -14,6 +14,8 @@ import { useRawMaterials } from "@/hooks/use-raw-materials"
 import { useToast } from "@/hooks/use-toast"
 import { useActivityLog } from "@/hooks/use-activity-log"
 import { usePermissions } from "@/hooks/use-permissions"
+import { useBatches } from "@/hooks/use-batches"
+import { ItemDetailsDialog } from "@/components/item-details-dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import * as XLSX from "xlsx"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -27,12 +29,14 @@ import { CreateBatchForm } from "@/components/create-batch-form"
 export default function StorePage() {
   // removed regularMaterials (raw materials) from destructure
   const { mouldedMaterials, finishedMaterials, assembledMaterials, updateRawMaterial, deleteRawMaterial } = useRawMaterials()
-  const { createActivityLog } = useActivityLog()
+  const { createActivityLog, activityLog } = useActivityLog()
   const { canEdit } = usePermissions()
+  const { batches } = useBatches()
   const [isClient, setIsClient] = useState(false)
   const [selectedItem, setSelectedItem] = useState<RawMaterial | null>(null)
   const [isRestockOpen, setIsRestockOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [sortDirection, setSortDirection] = useState<SortDirection>("none")
   const { toast } = useToast()
@@ -161,6 +165,13 @@ export default function StorePage() {
         description: "Failed to delete material. Please try again.",
         variant: "destructive",
       })
+    }
+  }
+
+  const handleMaterialDeleted = async (id: string) => {
+    const material = [...mouldedMaterials, ...finishedMaterials, ...assembledMaterials].find(m => m.id === id)
+    if (material) {
+      await handleDelete(material)
     }
   }
 
@@ -346,6 +357,10 @@ export default function StorePage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
+                          <DropdownMenuItem onClick={() => {
+                            setSelectedItem(material)
+                            setIsDetailsOpen(true)
+                          }}>View Details</DropdownMenuItem>
                           {canEditStore && (
                             <>
                               <DropdownMenuItem onClick={() => {
@@ -483,6 +498,20 @@ export default function StorePage() {
         />
       )}
 
+      {/* Item Details Dialog with Inventory Tracking */}
+      {selectedItem && (
+        <ItemDetailsDialog
+          isOpen={isDetailsOpen}
+          onOpenChange={setIsDetailsOpen}
+          item={selectedItem}
+          itemType="RawMaterial"
+          activityLog={activityLog.filter((log) => log.recordId === selectedItem.id)}
+          onItemUpdate={handleMaterialUpdated}
+          onItemDelete={handleMaterialDeleted}
+          batches={batches || []}
+        />
+      )}
+
       {/* Create Batch Dialog (from Store item) */}
       <Dialog open={isCreateBatchOpen} onOpenChange={setIsCreateBatchOpen}>
         <DialogContent className="sm:max-w-[1000px] w-[95vw] max-h-[90vh] overflow-y-auto">
@@ -498,7 +527,7 @@ export default function StorePage() {
                 setIsCreateBatchOpen(false)
                 toast({
                   title: "Batch Created",
-                  description: `Batch ${newBatch.id} has been created from store item.`,
+                  description: `Batch ${newBatch.batchId || newBatch.batchCode || newBatch.id} has been created from store item.`,
                 })
               }}
               initialProductId={initialBatchProductId}

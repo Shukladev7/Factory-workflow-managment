@@ -209,8 +209,8 @@ export default function DashboardPage() {
   }, [completedBatches])
 
   // Helper function to format batch ID for display
-  const formatBatchId = (id: string, code?: string | null) => {
-    const value = code || id
+  const formatBatchId = (batch: { id: string; batchId?: string; batchCode?: string }) => {
+    const value = batch.batchId || batch.batchCode || batch.id
     return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value
   }
 

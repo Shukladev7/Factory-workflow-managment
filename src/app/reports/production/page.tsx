@@ -100,7 +100,7 @@ export default function ProductionReportsPage() {
       return {
         dateISO: b.createdAt,
         date: new Date(b.createdAt),
-        batchId: b.id,
+        batchId: b.batchId || b.batchCode || b.id,
         productName: b.productName,
         status: b.status,
         producedUnits,

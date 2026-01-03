@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { useFinalStock } from "@/hooks/use-final-stock";
 import { useActivityLog } from "@/hooks/use-activity-log";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useBatches } from "@/hooks/use-batches";
 import {
   Dialog,
   DialogContent,
@@ -191,6 +192,7 @@ export default function ProductsPage() {
     useFinalStock();
   const { activityLog, createActivityLog } = useActivityLog();
   const { canEdit } = usePermissions();
+  const { batches } = useBatches();
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [selectedGroupedProduct, setSelectedGroupedProduct] =
     useState<GroupedProduct | null>(null);
@@ -608,18 +610,72 @@ export default function ProductsPage() {
     }
   };
 
-  const filteredAndSortedProducts = useMemo(() => {
-    const filtered = groupedProducts.filter((group) => {
-      const query = searchQuery.toLowerCase();
-      return (
-        group.productName.toLowerCase().includes(query) ||
-        group.firstEntry.sku.toLowerCase().includes(query) ||
-        (group.firstEntry.productId?.toLowerCase() || "").includes(query)
-      );
-    });
+// Replace the filteredAndSortedProducts useMemo with this debugged version:
 
-    return sortArray(filtered, sortDirection, (group) => group.productName);
-  }, [groupedProducts, searchQuery, sortDirection]);
+const filteredAndSortedProducts = useMemo(() => {
+  console.log("=== SEARCH DEBUG ===");
+  console.log("Search Query:", searchQuery);
+  console.log("Total Products:", groupedProducts.length);
+  
+  if (!searchQuery.trim()) {
+    console.log("No search query - returning all products");
+    return sortArray(groupedProducts, sortDirection, (group) => group.productName);
+  }
+
+  const query = searchQuery.toLowerCase().trim();
+  console.log("Normalized Query:", query);
+  
+  const filtered = groupedProducts.filter((group) => {
+    // Search ONLY in product name
+    const productName = (group.productName || "").toLowerCase();
+    const nameMatch = productName.includes(query);
+    
+    // Debug logging
+    if (nameMatch) {
+      console.log("✓ MATCH:", group.productName);
+    }
+    
+    return nameMatch;
+  });
+
+  console.log("Filtered Results:", filtered.length);
+  console.log("Filtered Products:", filtered.map(g => g.productName));
+
+  // Sort the filtered results
+  const sorted = filtered.sort((a, b) => {
+    const aName = (a.productName || "").toLowerCase();
+    const bName = (b.productName || "").toLowerCase();
+
+    // Check for exact matches
+    const aExactName = aName === query;
+    const bExactName = bName === query;
+
+    // Exact matches come first
+    if (aExactName && !bExactName) return -1;
+    if (bExactName && !aExactName) return 1;
+
+    // Then prioritize matches that start with the query
+    const aStartsWithName = aName.startsWith(query);
+    const bStartsWithName = bName.startsWith(query);
+
+    if (aStartsWithName && !bStartsWithName) return -1;
+    if (bStartsWithName && !aStartsWithName) return 1;
+
+    // Finally, sort alphabetically
+    return aName.localeCompare(bName);
+  });
+
+  // Apply user's sort direction if specified
+  if (sortDirection !== "none") {
+    return sortArray(sorted, sortDirection, (group) => group.productName);
+  }
+
+  return sorted;
+}, [groupedProducts, searchQuery, sortDirection]);
+
+// Also add this debug logging right before the return statement to see what's being rendered
+console.log("Rendering products:", filteredAndSortedProducts.map(g => g.productName));
+
 
   const getStatus = (quantity: number, threshold: number = 0) => {
     if (quantity <= 0) {
@@ -734,7 +790,7 @@ export default function ProductsPage() {
                 </TableRow>
               ) : (
                 filteredAndSortedProducts.map((group: GroupedProduct) => (
-                  <TableRow key={group.productName}>
+                  <TableRow key={group.productTemplate?.id}>
                   <TableCell>
                     <div className="relative w-16 h-12 rounded-md overflow-hidden">
                       <Image
@@ -810,6 +866,7 @@ export default function ProductsPage() {
           onProductUpdate={handleProductUpdated}
           onProductDelete={handleProductDeleted}
           canEdit={canEditFinalStock}
+          batches={batches || []}
         />
       )}
       {restockModal.product && (

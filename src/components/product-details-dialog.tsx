@@ -10,7 +10,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type ActivityLog, type FinalStock } from "@/lib/types";
+import { type ActivityLog, type FinalStock, type Batch } from "@/lib/types";
+import { InventoryTracking } from "./inventory-tracking";
 import { Button } from "./ui/button";
 import { EditProductForm } from "./edit-product-form";
 import {
@@ -51,6 +52,7 @@ interface ProductDetailsDialogProps {
   onProductUpdate: (product: FinalStock) => void;
   onProductDelete: (id: string) => Promise<void>;
   canEdit?: boolean;
+  batches?: Batch[]; // Optional batches for batch name lookup in inventory tracking
 }
 
 export function ProductDetailsDialog({
@@ -61,6 +63,7 @@ export function ProductDetailsDialog({
   onProductUpdate,
   onProductDelete,
   canEdit = true,
+  batches = [],
 }: ProductDetailsDialogProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -185,7 +188,7 @@ export function ProductDetailsDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[1000px]">
+      <DialogContent className="sm:max-w-[1200px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEditing
@@ -218,6 +221,7 @@ export function ProductDetailsDialog({
               <TabsTrigger value="batches">
                 Batches ({groupedProduct.batches.length})
               </TabsTrigger>
+              <TabsTrigger value="inventory">Inventory</TabsTrigger>
               <TabsTrigger value="log">Activity Log</TabsTrigger>
             </TabsList>
 
@@ -383,6 +387,15 @@ export function ProductDetailsDialog({
                   </div>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="inventory" className="mt-4">
+              <InventoryTracking
+                item={groupedProduct.firstEntry}
+                itemType="FinalStock"
+                activityLog={relevantActivityLogs}
+                batches={batches}
+              />
             </TabsContent>
 
             <TabsContent value="log" className="mt-4">

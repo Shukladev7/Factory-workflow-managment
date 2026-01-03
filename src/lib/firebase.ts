@@ -68,10 +68,17 @@ async function generateBatchCode(stage: ProcessingStageName, isFailedTesting?: b
 export async function getAllBatches(): Promise<Batch[]> {
   const batchesRef = collection(db, BATCHES_COLLECTION);
   const snapshot = await getDocs(batchesRef);
-  return snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-  })) as Batch[];
+  return snapshot.docs.map((doc) => {
+    const data = doc.data() as any;
+    // Ensure batchId exists for backward compatibility
+    // If batchId is missing, use batchCode or id
+    const batchId = data.batchId || data.batchCode || doc.id;
+    return {
+      id: doc.id,
+      ...data,
+      batchId: data.batchId || batchId, // Set batchId if missing
+    } as Batch;
+  });
 }
 
 /**
@@ -81,7 +88,14 @@ export async function getBatchById(id: string): Promise<Batch | null> {
   const batchRef = doc(db, BATCHES_COLLECTION, id);
   const snapshot = await getDoc(batchRef);
   if (!snapshot.exists()) return null;
-  return { id: snapshot.id, ...snapshot.data() } as Batch;
+  const data = snapshot.data() as any;
+  // Ensure batchId exists for backward compatibility
+  const batchId = data.batchId || data.batchCode || snapshot.id;
+  return { 
+    id: snapshot.id, 
+    ...data,
+    batchId: data.batchId || batchId, // Set batchId if missing
+  } as Batch;
 }
 
 /**
@@ -95,6 +109,7 @@ export async function getBatchesForStage(
   stage: ProcessingStageName,
 ): Promise<Batch[]> {
   const allBatches = await getAllBatches();
+  // getAllBatches already ensures batchId is set, so we can use it directly
 
   return allBatches.filter((batch) => {
     // Check if this stage is in the selected processes
@@ -145,10 +160,16 @@ export function subscribeToBatchesForStage(
       snapshot.docs.map((doc) => doc.id),
     );
 
-    const allBatches = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as Batch[];
+    const allBatches = snapshot.docs.map((doc) => {
+      const data = doc.data() as any;
+      // Ensure batchId exists for backward compatibility
+      const batchId = data.batchId || data.batchCode || doc.id;
+      return {
+        id: doc.id,
+        ...data,
+        batchId: data.batchId || batchId, // Set batchId if missing
+      } as Batch;
+    });
 
     console.log("[v0] All batches from Firestore:", allBatches.length);
     console.log(
@@ -209,10 +230,16 @@ export function subscribeToAllBatches(
   const q = query(batchesRef, orderBy("createdAt", "desc"));
 
   return onSnapshot(q, (snapshot) => {
-    const batches = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as Batch[];
+    const batches = snapshot.docs.map((doc) => {
+      const data = doc.data() as any;
+      // Ensure batchId exists for backward compatibility
+      const batchId = data.batchId || data.batchCode || doc.id;
+      return {
+        id: doc.id,
+        ...data,
+        batchId: data.batchId || batchId, // Set batchId if missing
+      } as Batch;
+    });
     callback(batches);
   });
 }
@@ -220,7 +247,7 @@ export function subscribeToAllBatches(
 /**
  * Create a new batch
  */
-export async function createBatch(batch: Omit<Batch, "id">): Promise<string> {
+export async function createBatch(batch: Omit<Batch, "id" | "batchId">): Promise<string> {
   const batchesRef = collection(db, BATCHES_COLLECTION);
   const primaryStage: ProcessingStageName | undefined =
     Array.isArray(batch.selectedProcesses) && batch.selectedProcesses.length > 0
@@ -241,11 +268,17 @@ export async function createBatch(batch: Omit<Batch, "id">): Promise<string> {
 
   const id = await generateReadableId(BATCHES_COLLECTION, "batch");
   const docRef = doc(db, BATCHES_COLLECTION, id);
+  
+  // Generate immutable batchId - single source of truth
+  // Use batchCode if available (human-readable), otherwise use Firestore document ID
+  const immutableBatchId = batchCode || id;
+  
   const { id: _ignored, ...batchData } = batch as any;
   await setDoc(docRef, {
     ...batchData,
     id,
-    batchCode,
+    batchId: immutableBatchId, // Set once at creation, never modified
+    batchCode, // Keep for backward compatibility
     createdAt: batch.createdAt || new Date().toISOString(),
   });
   return id;
@@ -261,9 +294,10 @@ export async function updateBatch(
   const batchRef = doc(db, BATCHES_COLLECTION, id);
 
   // Remove undefined values to avoid Firebase errors
+  // Also remove batchId to prevent modification (it's immutable)
   const cleanUpdates = Object.entries(updates).reduce(
     (acc, [key, value]) => {
-      if (value !== undefined) {
+      if (value !== undefined && key !== "batchId") {
         acc[key] = value;
       }
       return acc;
@@ -287,6 +321,7 @@ export async function updateBatchStage(
     completed?: boolean
     startedAt?: string
     finishedAt?: string
+    materialConsumptions?: Record<string, number>
   },
 ): Promise<void> {
   console.log("[v0] updateBatchStage called with ID:", id, "stage:", stage);
@@ -322,7 +357,12 @@ export async function updateBatchStage(
   const updates: Record<string, any> = {};
   Object.entries(stageData).forEach(([key, value]) => {
     if (value !== undefined) {
-      updates[`processingStages.${stage}.${key}`] = value;
+      if (key === "materialConsumptions") {
+        // Store materialConsumptions as a nested object
+        updates[`processingStages.${stage}.materialConsumptions`] = value;
+      } else {
+        updates[`processingStages.${stage}.${key}`] = value;
+      }
     }
   });
 

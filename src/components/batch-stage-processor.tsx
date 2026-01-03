@@ -38,6 +38,7 @@ import {
 import { useRawMaterials } from "@/hooks/use-raw-materials";
 import { useFinalStock } from "@/hooks/use-final-stock";
 import { useActivityLog } from "@/hooks/use-activity-log";
+import { getBatchId } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -441,12 +442,12 @@ export function BatchStageProcessor({
       recordId: newBatchId,
       recordType: "Batch",
       action: "Created",
-      details: `Failed Assembly batch created from Testing batch ${originalBatch.batchCode || originalBatch.id} for ${rejectedQty} rejected units.`,
+            details: `Failed Assembly batch created from Testing batch ${getBatchId(originalBatch)} for ${rejectedQty} rejected units.`,
     });
 
     toast({
       title: "Failed Assembly Batch Created",
-      description: `Created Assembly batch ${newBatchId} for ${rejectedQty} rejected units from Testing batch ${originalBatch.batchCode || originalBatch.id}.`,
+      description: `Created Assembly batch ${newBatchId} for ${rejectedQty} rejected units from Testing batch ${getBatchId(originalBatch)}.`,
     });
   };
 
@@ -491,11 +492,12 @@ export function BatchStageProcessor({
 
         if (inv.kind === "raw") {
           await updateRawMaterial(inv.item.id, { quantity: newQuantity });
+          const batchId = getBatchId(batch);
           await addLog({
             recordId: inv.item.id,
             recordType: "RawMaterial",
             action: "Stock Adjustment (Batch)",
-            details: `Batch ${batch.id} (${stage}) consumed ${consumptionAmount} ${inv.item.unit || "pcs"}. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
+            details: `Batch ${batchId} (${stage}) consumed ${consumptionAmount} ${inv.item.unit || "pcs"}. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
           });
         } else {
           const product = finalStock.find((p) => p.id === inv.item.id);
@@ -517,19 +519,21 @@ export function BatchStageProcessor({
             const updatedBatches = sorted.filter((e) => Number(e.quantity || 0) > 0);
             await updateFinalStock(inv.item.id, { batches: updatedBatches } as any);
             const newTotal = updatedBatches.reduce((sum, b) => sum + Number(b.quantity || 0), 0);
+            const batchId = getBatchId(batch);
             await addLog({
               recordId: inv.item.id,
               recordType: "FinalStock",
               action: "Stock Adjustment (Batch)",
-              details: `Batch ${batch.id} (${stage}) consumed ${consumptionAmount} pcs from batches. Old qty: ${oldQuantity}, New qty: ${newTotal}.`,
+              details: `Batch ${batchId} (${stage}) consumed ${consumptionAmount} pcs from batches. Old qty: ${oldQuantity}, New qty: ${newTotal}.`,
             });
           } else {
             await updateFinalStock(inv.item.id, { quantity: newQuantity } as any);
+            const batchId = getBatchId(batch);
             await addLog({
               recordId: inv.item.id,
               recordType: "FinalStock",
               action: "Stock Adjustment (Batch)",
-              details: `Batch ${batch.id} (${stage}) consumed ${consumptionAmount} pcs. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
+              details: `Batch ${batchId} (${stage}) consumed ${consumptionAmount} pcs. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
             });
           }
         }
@@ -551,11 +555,12 @@ export function BatchStageProcessor({
         quantity: newQuantity,
       });
 
+      const batchId = getBatchId(batch);
       await addLog({
         recordId: existingMaterial.id,
         recordType: "RawMaterial",
         action: "Stock Adjustment (Batch)",
-        details: `${accepted} moulded items from batch ${batch.id} added to Store. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
+        details: `${accepted} moulded items from batch ${batchId} added to Store. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
       });
 
       toast({
@@ -563,6 +568,7 @@ export function BatchStageProcessor({
         description: `${accepted} moulded ${batch.productName} added to existing stock.`,
       });
     } else {
+      const batchId = getBatchId(batch);
       const mouldedMaterialId = await addRawMaterial({
         name: materialName,
         sku: `MOULD-${Date.now()}`,
@@ -570,7 +576,7 @@ export function BatchStageProcessor({
         unit: "pcs",
         threshold: 10,
         isMoulded: true,
-        sourceBatchId: batch.id,
+        sourceBatchId: batchId,
         createdAt: new Date().toISOString(),
       });
 
@@ -578,7 +584,7 @@ export function BatchStageProcessor({
         recordId: mouldedMaterialId,
         recordType: "RawMaterial",
         action: "Created",
-        details: `${accepted} moulded items from batch ${batch.id} added to Store.`,
+        details: `${accepted} moulded items from batch ${batchId} added to Store.`,
       });
 
       toast({
@@ -602,11 +608,12 @@ export function BatchStageProcessor({
         quantity: newQuantity,
       });
 
+      const batchId = getBatchId(batch);
       await addLog({
         recordId: existingMaterial.id,
         recordType: "RawMaterial",
         action: "Stock Adjustment (Batch)",
-        details: `${accepted} machined items from batch ${batch.id} added to Store. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
+        details: `${accepted} machined items from batch ${batchId} added to Store. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
       });
 
       toast({
@@ -614,6 +621,7 @@ export function BatchStageProcessor({
         description: `${accepted} machined ${batch.productName} added to existing stock.`,
       });
     } else {
+      const batchId = getBatchId(batch);
       const finishedMaterialId = await addRawMaterial({
         name: materialName,
         sku: `FINISH-${Date.now()}`,
@@ -621,15 +629,14 @@ export function BatchStageProcessor({
         unit: "pcs",
         threshold: 10,
         isFinished: true,
-        sourceBatchId: batch.id,
+        sourceBatchId: batchId,
         createdAt: new Date().toISOString(),
       });
-
       await addLog({
         recordId: finishedMaterialId,
         recordType: "RawMaterial",
         action: "Created",
-        details: `${accepted} machined items from batch ${batch.id} added to Store.`,
+        details: `${accepted} machined items from batch ${batchId} added to Store.`,
       });
 
       toast({
@@ -652,11 +659,12 @@ export function BatchStageProcessor({
         quantity: newQuantity,
       });
 
+      const batchId = getBatchId(batch);
       await addLog({
         recordId: existingMaterial.id,
         recordType: "RawMaterial",
         action: "Stock Adjustment (Batch)",
-        details: `${accepted} assembled items from batch ${batch.id} added to Store. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
+        details: `${accepted} assembled items from batch ${batchId} added to Store. Old qty: ${oldQuantity}, New qty: ${newQuantity}.`,
       });
 
       toast({
@@ -664,6 +672,7 @@ export function BatchStageProcessor({
         description: `${accepted} assembled ${batch.productName} added to existing stock.`,
       });
     } else {
+      const batchId = getBatchId(batch);
       const assembledMaterialId = await addRawMaterial({
         name: materialName,
         sku: `ASSEMB-${Date.now()}`,
@@ -671,15 +680,14 @@ export function BatchStageProcessor({
         unit: "pcs",
         threshold: 10,
         isAssembled: true,
-        sourceBatchId: batch.id,
+        sourceBatchId: batchId,
         createdAt: new Date().toISOString(),
       });
-
       await addLog({
         recordId: assembledMaterialId,
         recordType: "RawMaterial",
         action: "Created",
-        details: `${accepted} assembled items from batch ${batch.id} added to Store.`,
+        details: `${accepted} assembled items from batch ${batchId} added to Store.`,
       });
 
       toast({
@@ -694,11 +702,12 @@ export function BatchStageProcessor({
       "@/lib/firebase/firestore-operations"
     );
 
+    const batchId = getBatchId(batch);
     const newBatch = {
-      batchId: batch.id,
-      sourceBatchId: batch.id,
+      batchId: batchId,
+      sourceBatchId: batchId,
       quantity: accepted,
-      sku: `BATCH-${batch.id}`,
+      sku: `BATCH-${batchId}`,
       createdAt: new Date().toISOString(),
     };
 
@@ -1387,7 +1396,7 @@ export function BatchStageProcessor({
                           />
                         </TableCell>
                         <TableCell className="font-mono text-xs font-bold">
-                          {batch.batchCode || batch.id}
+                          {batch.batchId || batch.batchCode || batch.id}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
                           {product ? (product.productId || product.id) : batch.productId}

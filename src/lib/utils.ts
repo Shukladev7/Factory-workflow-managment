@@ -28,3 +28,16 @@ export function formatMsToHMS(ms: number): string {
 export function formatNumber(num: number): string {
   return new Intl.NumberFormat('en-US').format(num)
 }
+
+/**
+ * Get the global, immutable batch ID for a batch.
+ * This is the single source of truth for batch identification across the system.
+ * 
+ * Priority: batchId > batchCode > id (Firestore document ID)
+ * 
+ * @param batch - Batch object with id, batchId (optional), and batchCode (optional)
+ * @returns The global batch identifier
+ */
+export function getBatchId(batch: { id: string; batchId?: string; batchCode?: string }): string {
+  return batch.batchId || batch.batchCode || batch.id
+}

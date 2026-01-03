@@ -49,7 +49,7 @@ export function EditBatchForm({ batch, onBatchUpdated }: EditBatchFormProps) {
             <div className="grid grid-cols-2 gap-4">
                 <div>
                     <FormLabel>Batch ID</FormLabel>
-                    <Input value={batch.id} readOnly className="bg-muted font-mono text-xs mt-2" />
+                    <Input value={batch.batchId || batch.batchCode || batch.id} readOnly className="bg-muted font-mono text-xs mt-2" />
                 </div>
                  <div>
                     <FormLabel>Product</FormLabel>

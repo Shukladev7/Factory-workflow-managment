@@ -76,7 +76,7 @@ export default function BatchesOverviewPage() {
 
   const handleBatchCreated = (newBatch: Batch) => {
     setIsCreateFormOpen(false)
-    const displayId = newBatch.batchCode || newBatch.id
+    const displayId = newBatch.batchId || newBatch.batchCode || newBatch.id
     toast({
       title: "Batch Created",
       description: `Batch ${displayId} has been successfully created.`,
@@ -170,7 +170,7 @@ export default function BatchesOverviewPage() {
 
   const handleExport = () => {
     const dataToExport = batches.map((batch) => ({
-      "Batch ID": batch.batchCode || batch.id,
+      "Batch ID": batch.batchId || batch.batchCode || batch.id,
       "Product Name": batch.productName,
       Status: getStatusLabel(batch),
       "Selected Processes": batch.selectedProcesses?.join(", ") || "All",
@@ -194,7 +194,7 @@ export default function BatchesOverviewPage() {
   const filteredAndSortedBatches = useMemo(() => {
     const query = searchQuery.toLowerCase()
     const filtered = batches.filter((batch) =>
-      (batch.batchCode || batch.id).toLowerCase().includes(query) ||
+      (batch.batchId || batch.batchCode || batch.id).toLowerCase().includes(query) ||
       batch.productName.toLowerCase().includes(query) ||
       getStatusLabel(batch).toLowerCase().includes(query) ||
       (batch.selectedProcesses || []).some(process => 
@@ -281,7 +281,7 @@ export default function BatchesOverviewPage() {
                 const currentStatus = getStatus(batch)
                 return (
                   <TableRow key={batch.id}>
-                    <TableCell className="font-mono text-xs">{batch.batchCode || batch.id}</TableCell>
+                    <TableCell className="font-mono text-xs">{batch.batchId || batch.batchCode || batch.id}</TableCell>
                     <TableCell className="font-medium">{batch.productName}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">

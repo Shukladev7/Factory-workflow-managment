@@ -76,6 +76,7 @@ export interface ProcessingStage {
   completed: boolean;
   startedAt?: string;
   finishedAt?: string;
+  materialConsumptions?: Record<string, number>; // Material consumption per material ID
 }
 
 export interface BatchMaterial {
@@ -87,8 +88,9 @@ export interface BatchMaterial {
 }
 
 export interface Batch {
-  id: string;
-  batchCode?: string; // Human-readable batch identifier (e.g., BATCH-MLD-001)
+  id: string; // Firestore document ID (internal)
+  batchId: string; // Global, immutable batch identifier - single source of truth (human-readable, e.g., BATCH-MLD-001 or FT-001)
+  batchCode?: string; // Deprecated: use batchId instead. Kept for backward compatibility
   productId: string;
   productName: string;
   quantityToBuild: number;
