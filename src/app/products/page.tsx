@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { CreateProductForm } from "@/components/create-product-form";
 import { useToast } from "@/hooks/use-toast";
@@ -204,6 +205,9 @@ export default function ProductsPage() {
     isOpen: boolean;
     product: GroupedProduct | null;
   }>({ isOpen: false, product: null });
+  const [deleteTargetProduct, setDeleteTargetProduct] = useState<FinalStock | null>(null);
+  const [deleteDependentProducts, setDeleteDependentProducts] = useState<FinalStock[]>([]);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const { toast } = useToast();
   
   const canEditFinalStock = canEdit("Final Stock");
@@ -316,6 +320,65 @@ export default function ProductsPage() {
     }
   };
 
+  const handleConfirmProductDeleteWithDependencies = async () => {
+    if (!deleteTargetProduct) {
+      setIsDeleteConfirmOpen(false);
+      return;
+    }
+
+    const productId = deleteTargetProduct.id;
+    const batchCount = deleteTargetProduct.batches?.length || 0;
+
+    try {
+      console.log("[ProductsPage] Cleaning reverse-dependent BOMs before delete...", {
+        productId,
+        dependents: deleteDependentProducts.map((p) => ({ id: p.id, name: p.name })),
+      });
+
+      // Remove this Final Stock item from BOMs of all dependent products
+      await Promise.all(
+        deleteDependentProducts.map(async (product) => {
+          if (!Array.isArray(product.bom_per_piece)) return;
+          const cleanedBom = product.bom_per_piece!.filter(
+            (row) => !(row.raw_material_id === productId && row.source === "final"),
+          );
+          await updateFinalStock(product.id, { bom_per_piece: cleanedBom });
+        }),
+      );
+
+      console.log("[ProductsPage] Reverse-dependent BOMs cleaned. Proceeding with deleteFinalStock...");
+
+      await deleteFinalStock(productId);
+
+      await createActivityLog({
+        recordId: productId,
+        recordType: "FinalStock",
+        action: "Deleted",
+        details: `Product "${deleteTargetProduct.name}" and ${batchCount} batch(es) were deleted. It was also removed from the BOM of ${deleteDependentProducts.length} dependent final stock item(s).`,
+        timestamp: new Date().toISOString(),
+        user: "System",
+      });
+
+      toast({
+        title: "Product Deleted",
+        description: `${deleteTargetProduct.name} and ${batchCount} batch(es) have been deleted and removed from all dependent BOMs.`,
+      });
+    } catch (error) {
+      console.error("[ProductsPage] ❌ Dependency-aware delete failed:", error);
+      toast({
+        variant: "destructive",
+        title: "Delete Failed",
+        description:
+          deleteTargetProduct.name +
+          " could not be deleted due to an error while updating dependent BOMs.",
+      });
+    } finally {
+      setIsDeleteConfirmOpen(false);
+      setDeleteTargetProduct(null);
+      setDeleteDependentProducts([]);
+    }
+  };
+
   const handleProductUpdated = async (updatedProduct: FinalStock) => {
     // Remove id field from updates as it shouldn't be stored as a document field
     const { id, ...baseUpdates } = updatedProduct;
@@ -379,6 +442,24 @@ export default function ProductsPage() {
       name: productToDelete.name,
       batches: batchCount,
     });
+
+    // Check reverse dependencies: other Final Stock items that use this product as an input (source = "final")
+    const reverseDependencies = finalStock.filter(
+      (product) =>
+        product.id !== productToDelete.id &&
+        Array.isArray(product.bom_per_piece) &&
+        product.bom_per_piece!.some(
+          (row) => row.raw_material_id === productId && row.source === "final",
+        ),
+    );
+
+    if (reverseDependencies.length > 0) {
+      // Show warning modal listing dependent Final Stock items. Actual deletion is handled on confirmation.
+      setDeleteTargetProduct(productToDelete);
+      setDeleteDependentProducts(reverseDependencies);
+      setIsDeleteConfirmOpen(true);
+      return;
+    }
 
     // Validate document ID before attempting deletion
     if (!productId || productId.trim() === "") {
@@ -610,72 +691,42 @@ export default function ProductsPage() {
     }
   };
 
-// Replace the filteredAndSortedProducts useMemo with this debugged version:
-
 const filteredAndSortedProducts = useMemo(() => {
-  console.log("=== SEARCH DEBUG ===");
-  console.log("Search Query:", searchQuery);
-  console.log("Total Products:", groupedProducts.length);
-  
-  if (!searchQuery.trim()) {
-    console.log("No search query - returning all products");
+  const rawQuery = searchQuery.trim();
+
+  if (!rawQuery) {
     return sortArray(groupedProducts, sortDirection, (group) => group.productName);
   }
 
-  const query = searchQuery.toLowerCase().trim();
-  console.log("Normalized Query:", query);
-  
+  const query = rawQuery.toLowerCase();
+
   const filtered = groupedProducts.filter((group) => {
-    // Search ONLY in product name
-    const productName = (group.productName || "").toLowerCase();
-    const nameMatch = productName.includes(query);
-    
-    // Debug logging
-    if (nameMatch) {
-      console.log("✓ MATCH:", group.productName);
-    }
-    
-    return nameMatch;
+    const template = group.productTemplate || group.firstEntry;
+
+    const name = (group.productName || "").toLowerCase();
+    const pid = (template?.productId || template?.id || "").toLowerCase();
+    const sku = (template?.sku || "").toLowerCase();
+
+    return (
+      name.includes(query) ||
+      pid.includes(query) ||
+      sku.includes(query)
+    );
   });
 
-  console.log("Filtered Results:", filtered.length);
-  console.log("Filtered Products:", filtered.map(g => g.productName));
-
-  // Sort the filtered results
+  // Sort the filtered results by product name, with simple alphabetic ordering
   const sorted = filtered.sort((a, b) => {
     const aName = (a.productName || "").toLowerCase();
     const bName = (b.productName || "").toLowerCase();
-
-    // Check for exact matches
-    const aExactName = aName === query;
-    const bExactName = bName === query;
-
-    // Exact matches come first
-    if (aExactName && !bExactName) return -1;
-    if (bExactName && !aExactName) return 1;
-
-    // Then prioritize matches that start with the query
-    const aStartsWithName = aName.startsWith(query);
-    const bStartsWithName = bName.startsWith(query);
-
-    if (aStartsWithName && !bStartsWithName) return -1;
-    if (bStartsWithName && !aStartsWithName) return 1;
-
-    // Finally, sort alphabetically
     return aName.localeCompare(bName);
   });
 
-  // Apply user's sort direction if specified
   if (sortDirection !== "none") {
     return sortArray(sorted, sortDirection, (group) => group.productName);
   }
 
   return sorted;
 }, [groupedProducts, searchQuery, sortDirection]);
-
-// Also add this debug logging right before the return statement to see what's being rendered
-console.log("Rendering products:", filteredAndSortedProducts.map(g => g.productName));
-
 
   const getStatus = (quantity: number, threshold: number = 0) => {
     if (quantity <= 0) {
@@ -857,12 +908,58 @@ console.log("Rendering products:", filteredAndSortedProducts.map(g => g.productN
           </Table>
         </CardContent>
       </Card>
+      {/* Dependency-aware delete confirmation for Final Stock items */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Final Stock Item</DialogTitle>
+            <DialogDescription>
+              This final stock item is used as an input material in the following final stock items.
+              Deleting it will remove it from their Bill of Materials.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm">Dependent final stock items:</p>
+            <ul className="list-disc pl-6 space-y-1 max-h-48 overflow-y-auto text-sm">
+              {deleteDependentProducts.map((product) => (
+                <li key={product.id}>
+                  <span className="font-medium">{product.name}</span>
+                  <span className="text-xs text-muted-foreground"> (ID: {product.id})</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteConfirmOpen(false);
+                setDeleteTargetProduct(null);
+                setDeleteDependentProducts([]);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleConfirmProductDeleteWithDependencies}
+            >
+              Confirm Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {selectedGroupedProduct && (
         <ProductDetailsDialog
           isOpen={isDetailsOpen}
           onOpenChange={handleDialogClose}
           groupedProduct={selectedGroupedProduct}
-          activityLog={activityLog}
+          activityLog={activityLog.filter((log) =>
+            log.recordId === selectedGroupedProduct.productTemplate?.id ||
+            log.recordId === selectedGroupedProduct.firstEntry.id
+          )}
           onProductUpdate={handleProductUpdated}
           onProductDelete={handleProductDeleted}
           canEdit={canEditFinalStock}

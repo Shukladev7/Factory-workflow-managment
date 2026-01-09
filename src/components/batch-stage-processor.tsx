@@ -268,10 +268,18 @@ export function BatchStageProcessor({
     "Testing",
   ];
 
-  // Helper: prefer productId lookup, fallback to name. Then prefer product.manufacturingStages over batch.selectedProcesses
+  // Helper: resolve product for a batch using external PID first (FinalStock.productId),
+  // then fall back to legacy doc ID semantics and finally to name-based lookup.
   const getProductForBatch = (batch: Batch) => {
-    const byId = finalStock.find((p) => p.id === batch.productId);
-    if (byId) return byId;
+    // Primary: match on external Product ID (PID)
+    const byExternalPid = finalStock.find((p) => p.productId === batch.productId);
+    if (byExternalPid) return byExternalPid;
+
+    // Legacy fallback: older batches may have stored the Firestore document ID in productId
+    const byDocId = finalStock.find((p) => p.id === batch.productId);
+    if (byDocId) return byDocId;
+
+    // Last resort: name-based match (can be ambiguous, but keeps backward compatibility)
     return finalStock.find((p) => p.name === batch.productName);
   };
 
@@ -711,18 +719,35 @@ export function BatchStageProcessor({
       createdAt: new Date().toISOString(),
     };
 
-    console.log(`[BatchStageProcessor] Getting/creating product for: ${batch.productName}`);
-    const product = await getOrCreateProduct(batch.productName, {
-      imageUrl: "/placeholder.svg?height=100&width=100",
-      imageHint: batch.productName,
-    });
-    console.log(`[BatchStageProcessor] Product obtained: ${product.id} - "${product.name}"`);
+    // Prefer resolving the product using the batch's productId (PID semantics),
+    // then fall back to legacy doc ID, and only then to name-based creation.
+    let product = finalStock.find((p) => p.productId === batch.productId);
+    if (!product) {
+      product = finalStock.find((p) => p.id === batch.productId);
+    }
+
+    if (!product) {
+      console.warn(
+        `[BatchStageProcessor] No FinalStock product found for batch.productId="${batch.productId}". Falling back to getOrCreateProduct by name: "${batch.productName}"`,
+      );
+      product = await getOrCreateProduct(batch.productName, {
+        imageUrl: "/placeholder.svg?height=100&width=100",
+        imageHint: batch.productName,
+      });
+    }
+
+    console.log(`[BatchStageProcessor] Product resolved for Final Stock: ${product.id} (PID=${product.productId || product.id}) - "${product.name}"`);
 
     try {
       await addBatchToProduct(product.id, newBatch);
-      console.log(`[BatchStageProcessor] ✓ Successfully added batch ${batch.id} to product ${product.name} (${product.id})`);
+      console.log(
+        `[BatchStageProcessor] ✓ Successfully added batch ${batch.id} to product ${product.name} (${product.id})`,
+      );
     } catch (error) {
-      console.error(`[BatchStageProcessor] ❌ Failed to add batch ${batch.id} to product ${product.id}:`, error);
+      console.error(
+        `[BatchStageProcessor] ❌ Failed to add batch ${batch.id} to product ${product.id}:`,
+        error,
+      );
       throw error;
     }
   };
@@ -1341,6 +1366,7 @@ export function BatchStageProcessor({
                   <TableHead>Batch ID</TableHead>
                   <TableHead>Product ID</TableHead>
                   <TableHead>Product</TableHead>
+                  <TableHead>SKU</TableHead>
                   <TableHead>Measurement Sketch</TableHead>
                   <TableHead>Date Created</TableHead>
                   {stage !== "Testing" && (
@@ -1363,9 +1389,7 @@ export function BatchStageProcessor({
                   const assemblyMaterials = stage === "Testing"
                     ? getAssemblyMaterialsForBatch(batch)
                     : [];
-                  const product = finalStock.find(
-                    (p) => p.name === batch.productName,
-                  );
+                  const product = getProductForBatch(batch);
                   const measurementSketch = product?.measurementSketch;
 
                   return (
@@ -1399,7 +1423,7 @@ export function BatchStageProcessor({
                           {batch.batchId || batch.batchCode || batch.id}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          {product ? (product.productId || product.id) : batch.productId}
+                          {batch.productId}
                         </TableCell>
                         <TableCell
                           className="font-bold cursor-pointer select-none"
@@ -1421,6 +1445,9 @@ export function BatchStageProcessor({
                           }}
                         >
                           {batch.productName}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {product?.sku || "—"}
                         </TableCell>
                         <TableCell>
                           {measurementSketch ? (
@@ -1583,6 +1610,7 @@ export function BatchStageProcessor({
                             >
                               {displayName}
                             </TableCell>
+                            <TableCell></TableCell>
                             <TableCell></TableCell>
                             <TableCell></TableCell>
                             <TableCell></TableCell>

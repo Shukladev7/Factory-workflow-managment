@@ -11,6 +11,21 @@ import { useFinalStock } from "@/hooks/use-final-stock"
 import type { BOMRow, ProcessingStageName, FinalStock } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 
   const getFinalStockAvailable = (p: FinalStock): number => {
     const batchesQty = (p.batches || []).reduce((sum, b) => sum + Number(b.quantity || 0), 0)
@@ -50,6 +65,8 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
   const [machinedUnitRequired, setMachinedUnitRequired] = useState(false)
   const [assembledUnitRequired, setAssembledUnitRequired] = useState(false)
   const isProcessingRef = useRef(false)
+  const [materialSelectorRowIndex, setMaterialSelectorRowIndex] = useState<number | null>(null)
+  const [materialSearchQuery, setMaterialSearchQuery] = useState("")
 
   // Special identifiers for moulded and machined units
   const MOULDED_UNIT_ID = `__MOULDED_UNIT__`
@@ -410,7 +427,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
               />
               <label
                 htmlFor="moulded-unit"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed"
               >
                 Moulded unit required
                 <span className="text-muted-foreground"> (adds: Moulded {productName} → Machining stage, qty = 1)</span>
@@ -438,7 +455,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
               />
               <label
                 htmlFor="machined-unit"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed "
               >
                 Machined unit required
                 <span className="text-muted-foreground"> (adds: Machined {productName} → Assembling stage, qty = 1)</span>
@@ -466,7 +483,7 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
               />
               <label
                 htmlFor="assembled-unit"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed"
               >
                 Assembled unit required
                 <span className="text-muted-foreground"> (adds: Assembled {productName} → Testing stage, qty = 1)</span>
@@ -515,45 +532,40 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
             const totalQty = row.qty_per_piece * quantityMultiplier
 
             return (
-              <div key={index} className="p-4 border rounded-lg bg-card space-y-3">
+              <div key={index} className="p-4 border rounded-lg bg-card ">
                 <div className={`grid grid-cols-1 ${scopeStage ? "md:grid-cols-4" : "md:grid-cols-5"} gap-3`}>
-                  {/* Raw Material */}
+                  {/* Material selector (raw or final) */}
                   <div className="md:col-span-2">
-                    <Label>Raw Material *</Label>
-                    <Select
-                      value={row.raw_material_id}
-                      onValueChange={(value) => updateRow(index, "raw_material_id", value)}
+                    <Label>Material *</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-between"
+                      onClick={() => {
+                        if (readOnly || isAutoManagedRow(row)) return
+                        setMaterialSelectorRowIndex(index)
+                      }}
                       disabled={readOnly || isAutoManagedRow(row)}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select material" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {isAutoManagedRow(row) ? (
-                          // Show name for auto-managed rows
-                          <SelectItem key={row.raw_material_id} value={row.raw_material_id}>
-                            {row.raw_material_id === MOULDED_UNIT_ID || (mouldedUnitItem && row.raw_material_id === mouldedUnitItem.id)
-                              ? `Moulded ${productName}`
-                              : row.raw_material_id === MACHINED_UNIT_ID || (machinedUnitItem && row.raw_material_id === machinedUnitItem.id)
-                                ? `Finished ${productName}`
-                                : `Assembled ${productName}`}
-                          </SelectItem>
-                        ) : (
-                          // Show materials based on row source
-                          (inferredIsFinal
-                            ? availableFinalStock.map((p) => (
-                                <SelectItem key={p.id} value={p.id}>
-                                  {p.name} ({getFinalStockAvailable(p)} pcs)
-                                </SelectItem>
-                              ))
-                            : availableMaterials.map((mat) => (
-                                <SelectItem key={mat.id} value={mat.id}>
-                                  {mat.name} ({mat.quantity} {mat.unit})
-                                </SelectItem>
-                              )))
-                        )}
-                      </SelectContent>
-                    </Select>
+                      {(() => {
+                        if (!row.raw_material_id) return inferredIsFinal ? "Select Final Stock" : "Select Raw Material"
+                        if (inferredIsFinal) {
+                          const selectedFinal = availableFinalStock.find(p => p.id === row.raw_material_id)
+                          return selectedFinal
+                            ? `${selectedFinal.productId || selectedFinal.id} — ${selectedFinal.name} (${selectedFinal.sku})`
+                            : row.raw_material_id
+                        } else {
+                          const selectedRaw = rawMaterials.find(m => m.id === row.raw_material_id)
+                          return selectedRaw
+                            ? `${selectedRaw.id} — ${selectedRaw.name} (${selectedRaw.sku})`
+                            : row.raw_material_id
+                        }
+                      })()}
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {inferredIsFinal ? "Using Final Stock item" : "Using Raw Material"}
+                    </p>
                     {!scopeStage && isAutoManagedRow(row) && (
                       <p className="text-xs text-muted-foreground mt-1">
                         Managed by checkbox above
@@ -644,6 +656,128 @@ export function BOMEditor({ bomRows, onBOMChange, readOnly = false, quantityMult
           })}
         </div>
       ))}
+
+      {/* Material selector dialog with searchable table */}
+      {!readOnly && materialSelectorRowIndex !== null && (
+        <Dialog
+          open={materialSelectorRowIndex !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setMaterialSelectorRowIndex(null)
+              setMaterialSearchQuery("")
+            }
+          }}
+         
+        >
+          <DialogContent className="sm:max-w-[900px] overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>
+                {(() => {
+                  const localIndex = materialSelectorRowIndex!
+                  const row = rowsToRender[localIndex]
+                  if (!row) return "Select Material"
+
+                  const isFinal = row.source === "final" || availableFinalStock.some(p => p.id === row.raw_material_id)
+                  return isFinal ? "Select Final Stock" : "Select Raw Material"
+                })()}
+              </DialogTitle>
+              <DialogDescription>
+                Search by Product ID / System ID, Name, or SKU.
+              </DialogDescription>
+            </DialogHeader>
+            {(() => {
+              const localIndex = materialSelectorRowIndex!
+              const row = rowsToRender[localIndex]
+              if (!row) return null
+
+              const isFinal = row.source === "final" || availableFinalStock.some(p => p.id === row.raw_material_id)
+              const candidates = isFinal ? availableFinalStock : availableMaterials
+
+              const query = materialSearchQuery.trim().toLowerCase()
+              const filtered = query
+                ? candidates.filter((item: any) => {
+                    const idPart = isFinal
+                      ? ((item as FinalStock).productId || item.id)
+                      : item.id
+                    const namePart = (item.name || "").toLowerCase()
+                    const skuPart = (item.sku || "").toLowerCase()
+                    return (
+                      idPart.toLowerCase().includes(query) ||
+                      namePart.includes(query) ||
+                      skuPart.includes(query)
+                    )
+                  })
+                : candidates
+
+              const getDisplayId = (item: any) =>
+                isFinal
+                  ? ((item as FinalStock).productId || item.id)
+                  : item.id
+
+              const handleSelect = (id: string) => {
+                updateRow(localIndex, "raw_material_id", id)
+                setMaterialSelectorRowIndex(null)
+                setMaterialSearchQuery("")
+              }
+
+              return (
+                <>
+                  <div className="mb-3">
+                    <Input
+                      placeholder="Search by Product ID / System ID, Name, or SKU..."
+                      value={materialSearchQuery}
+                      onChange={(e) => setMaterialSearchQuery(e.target.value)}
+                    />
+                  </div>
+                  <div className="border rounded-md">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[180px]">Product ID / System ID</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>SKU</TableHead>
+                          <TableHead className="w-[100px] text-right">Select</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filtered.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-muted-foreground">
+                              No materials match your search.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          filtered.map((item: any) => (
+                            <TableRow key={item.id} className="cursor-pointer" onClick={() => handleSelect(item.id)}>
+                              <TableCell className="font-mono text-xs">
+                                {getDisplayId(item)}
+                              </TableCell>
+                              <TableCell>{item.name}</TableCell>
+                              <TableCell className="font-mono text-xs">{item.sku}</TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleSelect(item.id)
+                                  }}
+                                >
+                                  Select
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              )
+            })()}
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

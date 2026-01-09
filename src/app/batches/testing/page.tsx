@@ -7,8 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import type { FinalStock, ProcessingStageName, RawMaterial } from "@/lib/types"
-import { ChevronDown, ChevronUp } from "lucide-react"
+import { ChevronDown, ChevronUp, Search } from "lucide-react"
 import { useRawMaterials } from "@/hooks/use-raw-materials"
 import { useFinalStock } from "@/hooks/use-final-stock"
 import { useToast } from "@/hooks/use-toast"
@@ -33,6 +34,7 @@ export default function TestingPage() {
   const { createActivityLog } = useActivityLog()
   const [isClient, setIsClient] = useState(false)
   const [isItemsExpanded, setIsItemsExpanded] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => setIsClient(true), [])
 
@@ -49,19 +51,6 @@ export default function TestingPage() {
     if (product) return product
     const viaBom = finalStock.find((p) => Array.isArray(p.bom_per_piece) && p.bom_per_piece.some((row) => row.raw_material_id === material.id))
     if (viaBom) return viaBom
-    const name = material.name || ""
-    let baseName = name
-    if (type === "moulded") {
-      baseName = name.replace(/^Moulded\s+/i, "").trim()
-    } else if (type === "machined") {
-      baseName = name.replace(/^Machined\s+/i, "").trim()
-    } else {
-      baseName = name.replace(/^Assembled\s+/i, "").trim()
-    }
-    if (baseName) {
-      const viaName = finalStock.find((p) => p.name === baseName)
-      if (viaName) return viaName
-    }
     return null
   }
 
@@ -112,6 +101,24 @@ export default function TestingPage() {
     return rows.sort((a, b) => a.urgency - b.urgency)
   }, [mouldedMaterials, finishedMaterials, assembledMaterials, finalStock])
 
+  const filteredCandidates = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return testingCandidates
+
+    return testingCandidates.filter(({ material, product }) => {
+      const systemId = (material.id || "").toLowerCase()
+      const pid = (product.productId || product.id || "").toLowerCase()
+      const sku = (material.sku || "").toLowerCase()
+      const name = (product.name || material.name || "").toLowerCase()
+      return (
+        systemId.includes(query) ||
+        pid.includes(query) ||
+        sku.includes(query) ||
+        name.includes(query)
+      )
+    })
+  }, [testingCandidates, searchQuery])
+
   const displayThresholdFor = (material: RawMaterial, product: FinalStock, type: "moulded" | "machined" | "assembled") => {
     const productThreshold = type === "moulded" ? product.mouldedThreshold : type === "machined" ? product.machinedThreshold : product.assembledThreshold
     if (material.threshold && material.threshold > 0) return material.threshold
@@ -131,7 +138,7 @@ export default function TestingPage() {
         Testing: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
       }
       const docId = await createBatch({
-        productId: product.id,
+        productId: product.productId || product.id,
         productName: product.name,
         quantityToBuild: 1,
         totalMaterialQuantity: 1,
@@ -169,23 +176,34 @@ export default function TestingPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
           <CardTitle>Items List</CardTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsItemsExpanded(!isItemsExpanded)}
-          >
-            {isItemsExpanded ? (
-              <>
-                <ChevronUp className="h-4 w-4 mr-2" />
-                Collapse
-              </>
-            ) : (
-              <>
-                <ChevronDown className="h-4 w-4 mr-2" />
-                Expand
-              </>
-            )}
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by ID, Product ID, SKU, or Name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 w-64"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsItemsExpanded(!isItemsExpanded)}
+            >
+              {isItemsExpanded ? (
+                <>
+                  <ChevronUp className="h-4 w-4 mr-2" />
+                  Collapse
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-4 w-4 mr-2" />
+                  Expand
+                </>
+              )}
+            </Button>
+          </div>
         </CardHeader>
         {isItemsExpanded && (
           <CardContent className="pt-6">
@@ -202,12 +220,12 @@ export default function TestingPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {testingCandidates.length === 0 ? (
+              {filteredCandidates.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="h-24 text-center">No store items ready for Testing</TableCell>
                 </TableRow>
               ) : (
-                testingCandidates.map(({ material, product, type }) => {
+                filteredCandidates.map(({ material, product, type }) => {
                   const threshold = displayThresholdFor(material, product, type)
                   const status = material.quantity <= threshold ? "Low Stock" : "In Stock"
                   return (

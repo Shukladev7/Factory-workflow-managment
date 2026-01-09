@@ -144,6 +144,32 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
         </Link>
+
+        <Link href="/reports/audit">
+          <Card className={cn(
+            "transition-all hover:shadow-lg hover:border-primary cursor-pointer h-full"
+          )}>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Package className="h-6 w-6 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <CardTitle>Audit Trail</CardTitle>
+                  <CardDescription>
+                    Centralized audit log of create and delete actions for key entities.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Review who created or deleted Raw Materials, Store Items, and Final Stock items, with timestamps and
+                detailed descriptions for each action.
+              </p>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
     </div>
   )

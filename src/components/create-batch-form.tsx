@@ -328,7 +328,10 @@ export function CreateBatchForm({ onBatchCreated, initialProductId, initialStage
     const newBatch: Omit<Batch, "processingStages" | "status"> & {
       status: "Planned";
     } = {
+      // Use the form's batchId as a temporary placeholder; Firestore will assign
+      // the canonical batchId when persisting the batch.
       id: values.batchId,
+      batchId: values.batchId,
       productId: values.productId,
       productName: selectedProduct.name,
       quantityToBuild: values.quantityToBuild,
@@ -373,17 +376,20 @@ export function CreateBatchForm({ onBatchCreated, initialProductId, initialStage
     };
 
     try {
-      await createBatch(fullBatch);
-      onBatchCreated(fullBatch);
+      // Persist the batch and get the authoritative Firestore ID
+      const createdId = await createBatch(fullBatch);
+      const createdBatch: Batch = { ...fullBatch, id: createdId };
+
+      onBatchCreated(createdBatch);
       await addLog({
-        recordId: fullBatch.id,
+        recordId: createdId,
         recordType: "Batch",
         action: "Created",
         details: `Batch for "${fullBatch.productName}" created with processes: ${values.selectedProcesses.join(", ")}.`,
       });
       toast({
         title: "Batch Created",
-        description: `Batch ${fullBatch.id} has been created successfully.`,
+        description: `Batch ${createdId} has been created successfully.`,
       });
 
       // Reset form after successful submission

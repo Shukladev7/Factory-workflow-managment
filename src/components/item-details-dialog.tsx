@@ -30,7 +30,9 @@ interface ItemDetailsDialogProps<T extends Item> {
   itemType: ItemType;
   activityLog: ActivityLog[];
   onItemUpdate: (item: T) => void;
-  onItemDelete: (id: string) => void;
+  onItemDelete?: (id: string) => void;
+  // When true, hide the Delete button entirely (e.g., for Store items which must be permanent)
+  disableDelete?: boolean;
   batches?: Batch[]; // Optional batches for batch name lookup in inventory tracking
 }
 
@@ -42,6 +44,7 @@ export function ItemDetailsDialog<T extends Item>({
   activityLog,
   onItemUpdate,
   onItemDelete,
+  disableDelete = false,
   batches = [],
 }: ItemDetailsDialogProps<T>) {
   const [isEditing, setIsEditing] = useState(false);
@@ -52,6 +55,9 @@ export function ItemDetailsDialog<T extends Item>({
   };
 
   const handleDelete = () => {
+    if (!onItemDelete) {
+      return;
+    }
     onItemDelete(item.id);
     onOpenChange(false);
   };
@@ -133,7 +139,8 @@ export function ItemDetailsDialog<T extends Item>({
                 <TabsContent value="details" className="mt-4">
                     {renderItemDetails()}
                     <DialogFooter className="pt-6">
-                         <AlertDialog>
+                        {!disableDelete && onItemDelete && (
+                          <AlertDialog>
                             <AlertDialogTrigger asChild>
                                 <Button variant="destructive">Delete</Button>
                             </AlertDialogTrigger>
@@ -150,7 +157,8 @@ export function ItemDetailsDialog<T extends Item>({
                                 <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>
-                        </AlertDialog>
+                          </AlertDialog>
+                        )}
                         <Button onClick={() => setIsEditing(true)}>Edit</Button>
                     </DialogFooter>
                 </TabsContent>

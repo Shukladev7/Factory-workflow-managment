@@ -4,11 +4,12 @@ import PageHeader from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import type { RawMaterial } from "@/lib/types"
+import type { RawMaterial, FinalStock } from "@/lib/types"
 import { PlusCircle, AlertTriangle, MoreHorizontal, FileDown, XCircle, Upload, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { useRawMaterials } from "@/hooks/use-raw-materials"
+import { useFinalStock } from "@/hooks/use-final-stock"
 import { useActivityLog } from "@/hooks/use-activity-log"
 import { usePermissions } from "@/hooks/use-permissions"
 import { useBatches } from "@/hooks/use-batches"
@@ -19,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog"
 import { CreateMaterialForm } from "@/components/create-material-form"
 import { useToast } from "@/hooks/use-toast"
@@ -32,6 +34,7 @@ import { SortControls, sortArray, type SortDirection } from "@/components/sort-c
 
 export default function MaterialsPage() {
   const { regularMaterials, createRawMaterial, updateRawMaterial, deleteRawMaterial } = useRawMaterials()
+  const { finalStock, updateFinalStock } = useFinalStock()
   const { activityLog, createActivityLog } = useActivityLog()
   const { canEdit } = usePermissions()
   const { batches } = useBatches()
@@ -42,6 +45,9 @@ export default function MaterialsPage() {
   const [isClient, setIsClient] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [sortDirection, setSortDirection] = useState<SortDirection>("none")
+  const [deleteTarget, setDeleteTarget] = useState<RawMaterial | null>(null)
+  const [dependentProducts, setDependentProducts] = useState<FinalStock[]>([])
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
   const { toast } = useToast()
   
   const canEditMaterials = canEdit("Raw Materials")
@@ -197,24 +203,84 @@ export default function MaterialsPage() {
   }
 
   const handleMaterialDeleted = async (materialId: string) => {
+    const materialToDelete = regularMaterials.find((m) => m.id === materialId)
+    if (!materialToDelete) return
+
+    // Find all Final Stock items whose BOM contains this raw material
+    const affectedProducts = finalStock.filter(
+      (product) =>
+        Array.isArray(product.bom_per_piece) &&
+        product.bom_per_piece!.some((row) => row.raw_material_id === materialId),
+    )
+
+    if (affectedProducts.length === 0) {
+      // No dependencies - proceed with direct deletion
+      try {
+        await deleteRawMaterial(materialId)
+        await createActivityLogEntry({
+          recordId: materialId,
+          recordType: "RawMaterial",
+          action: "Deleted",
+          details: `Material "${materialToDelete.name}" was deleted.`,
+        })
+        toast({ title: "Material Deleted", description: `${materialToDelete.name} has been deleted.` })
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to delete material. Please try again.",
+          variant: "destructive",
+        })
+      }
+      return
+    }
+
+    // Dependencies exist - open confirmation dialog with list of affected Final Stock items
+    setDeleteTarget(materialToDelete)
+    setDependentProducts(affectedProducts)
+    setIsDeleteConfirmOpen(true)
+  }
+
+  const handleConfirmDeleteWithDependencies = async () => {
+    if (!deleteTarget) {
+      setIsDeleteConfirmOpen(false)
+      return
+    }
+
     try {
-      const materialToDelete = regularMaterials.find((m) => m.id === materialId)
-      if (!materialToDelete) return
-      
+      // Remove this raw material from all BOMs where it is referenced
+      const materialId = deleteTarget.id
+
+      await Promise.all(
+        dependentProducts.map(async (product) => {
+          if (!Array.isArray(product.bom_per_piece)) return
+          const cleanedBom = product.bom_per_piece!.filter((row) => row.raw_material_id !== materialId)
+          await updateFinalStock(product.id, { bom_per_piece: cleanedBom })
+        }),
+      )
+
       await deleteRawMaterial(materialId)
+
       await createActivityLogEntry({
         recordId: materialId,
         recordType: "RawMaterial",
         action: "Deleted",
-        details: `Material "${materialToDelete.name}" was deleted.`,
+        details: `Material "${deleteTarget.name}" was deleted after removing it from the BOM of ${dependentProducts.length} final stock item(s).`,
       })
-      toast({ title: "Material Deleted", description: `${materialToDelete.name} has been deleted.` })
+
+      toast({
+        title: "Material Deleted",
+        description: `${deleteTarget.name} has been deleted and removed from all affected BOMs.`,
+      })
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to delete material. Please try again.",
+        description: "Failed to delete material and update BOMs. Please try again.",
         variant: "destructive",
       })
+    } finally {
+      setIsDeleteConfirmOpen(false)
+      setDeleteTarget(null)
+      setDependentProducts([])
     }
   }
 
@@ -443,9 +509,51 @@ export default function MaterialsPage() {
           activityLog={activityLog.filter((log) => log.recordId === selectedItem.id)}
           onItemUpdate={handleMaterialUpdated}
           onItemDelete={handleMaterialDeleted}
+          disableDelete={false}
           batches={batches || []}
         />
       )}
+      {/* Dependency-aware delete confirmation for Raw Materials */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Raw Material</DialogTitle>
+            <DialogDescription>
+              This raw material is currently used in the Bill of Materials of the following final stock items.
+              Deleting it will remove this raw material from their BOM.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm">
+              Affected final stock items:
+            </p>
+            <ul className="list-disc pl-6 space-y-1 max-h-48 overflow-y-auto text-sm">
+              {dependentProducts.map((product) => (
+                <li key={product.id}>
+                  <span className="font-medium">{product.name}</span>
+                  <span className="text-xs text-muted-foreground"> (ID: {product.id})</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteConfirmOpen(false)
+                setDeleteTarget(null)
+                setDependentProducts([])
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleConfirmDeleteWithDependencies}>
+              Confirm Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {restockItem && (
         <RestockDialog
           isOpen={!!restockItem}

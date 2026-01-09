@@ -28,7 +28,7 @@ import { CreateBatchForm } from "@/components/create-batch-form"
 
 export default function StorePage() {
   // removed regularMaterials (raw materials) from destructure
-  const { mouldedMaterials, finishedMaterials, assembledMaterials, updateRawMaterial, deleteRawMaterial } = useRawMaterials()
+  const { mouldedMaterials, finishedMaterials, assembledMaterials, updateRawMaterial } = useRawMaterials()
   const { createActivityLog, activityLog } = useActivityLog()
   const { canEdit } = usePermissions()
   const { batches } = useBatches()
@@ -146,34 +146,8 @@ export default function StorePage() {
     }
   }
 
-  const handleDelete = async (material: RawMaterial) => {
-    try {
-      await deleteRawMaterial(material.id)
-      await createActivityLogEntry({
-        recordId: material.id,
-        recordType: "RawMaterial",
-        action: "Deleted",
-        details: `Material "${material.name}" was deleted from Store.`,
-      })
-      toast({
-        title: "Material Deleted",
-        description: `${material.name} has been deleted from Store.`,
-      })
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to delete material. Please try again.",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const handleMaterialDeleted = async (id: string) => {
-    const material = [...mouldedMaterials, ...finishedMaterials, ...assembledMaterials].find(m => m.id === id)
-    if (material) {
-      await handleDelete(material)
-    }
-  }
+  // Deletion of Store items is intentionally disabled to maintain permanent records.
+  // Any attempts to delete from this page should be blocked at the UI level.
 
   const handleExport = (materials: RawMaterial[], filename: string) => {
     const dataToExport = materials.map((material) => ({
@@ -376,10 +350,7 @@ export default function StorePage() {
                               >
                                 Create Batch
                               </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => handleDelete(material)}
-                                className="text-destructive"
-                              >Delete</DropdownMenuItem>
+                              {/* Delete disabled for Store items to keep permanent records */}
                             </>
                           )}
                           {!canEditStore && (
@@ -507,7 +478,7 @@ export default function StorePage() {
           itemType="RawMaterial"
           activityLog={activityLog.filter((log) => log.recordId === selectedItem.id)}
           onItemUpdate={handleMaterialUpdated}
-          onItemDelete={handleMaterialDeleted}
+          disableDelete={true}
           batches={batches || []}
         />
       )}

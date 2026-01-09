@@ -76,6 +76,16 @@ export async function updateRawMaterial(
 
 export async function deleteRawMaterial(id: string) {
   const materialRef = doc(db, COLLECTIONS.RAW_MATERIALS, id);
+  // Protect Store items (moulded / finished / assembled units) from deletion.
+  // Only regular raw materials (used in the Raw Materials module) may be deleted.
+  const snapshot = await getDoc(materialRef);
+  if (snapshot.exists()) {
+    const data = snapshot.data() as RawMaterial;
+    if (data.isMoulded || data.isFinished || data.isAssembled) {
+      throw new Error("Deletion of Store items is disabled. These records must remain permanent.");
+    }
+  }
+
   await deleteDoc(materialRef);
 }
 

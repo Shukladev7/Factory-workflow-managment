@@ -266,6 +266,45 @@ export async function createBatch(batch: Omit<Batch, "id" | "batchId">): Promise
     }
   }
 
+  // Validate that a productId (PID) is present and refers to an existing Final Stock product.
+  // Batch.productId is treated as the external Product ID (FinalStock.productId),
+  // with a fallback to the Firestore document ID for backwards compatibility.
+  const requestedProductId = (batch as any).productId as string | undefined;
+
+  if (!requestedProductId || requestedProductId.trim() === "") {
+    throw new Error("[createBatch] productId (PID) is required to create a batch.");
+  }
+
+  let matchedProductDocId: string | null = null;
+
+  // 1) Try to resolve by external PID stored in FinalStock.productId
+  const finalStockRef = collection(db, "finalStock");
+  const pidQuery = query(finalStockRef, where("productId", "==", requestedProductId));
+  const pidSnapshot = await getDocs(pidQuery);
+
+  if (!pidSnapshot.empty) {
+    if (pidSnapshot.docs.length > 1) {
+      console.warn(
+        `[createBatch] Multiple FinalStock documents share PID ${requestedProductId}; using first: ${pidSnapshot.docs[0].id}`,
+      );
+    }
+    matchedProductDocId = pidSnapshot.docs[0].id;
+  } else {
+    // 2) Fallback: treat requestedProductId as a Firestore document ID (legacy batches / callers)
+    const productRef = doc(db, "finalStock", requestedProductId);
+    const productSnapshot = await getDoc(productRef);
+
+    if (productSnapshot.exists()) {
+      matchedProductDocId = productSnapshot.id;
+    }
+  }
+
+  if (!matchedProductDocId) {
+    throw new Error(
+      `[createBatch] Cannot create batch: no FinalStock product found for PID or ID "${requestedProductId}".`,
+    );
+  }
+
   const id = await generateReadableId(BATCHES_COLLECTION, "batch");
   const docRef = doc(db, BATCHES_COLLECTION, id);
   

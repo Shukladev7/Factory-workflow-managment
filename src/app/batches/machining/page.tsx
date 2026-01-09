@@ -7,10 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useRawMaterials } from "@/hooks/use-raw-materials"
 import { useFinalStock } from "@/hooks/use-final-stock"
 import type { RawMaterial, FinalStock, Batch, ProcessingStageName } from "@/lib/types"
-import { AlertTriangle, XCircle, ChevronDown, ChevronUp } from "lucide-react"
+import { AlertTriangle, XCircle, ChevronDown, ChevronUp, Search } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createBatch } from "@/lib/firebase"
 import {
@@ -30,6 +31,7 @@ export default function MachiningPage() {
   const { finalStock } = useFinalStock()
   const { toast } = useToast()
   const [isItemsExpanded, setIsItemsExpanded] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const getProductForMaterial = (material: RawMaterial): FinalStock | null => {
     if (!finalStock || finalStock.length === 0) return null
@@ -39,11 +41,6 @@ export default function MachiningPage() {
       (p) => Array.isArray(p.bom_per_piece) && p.bom_per_piece.some((row) => row.raw_material_id === material.id)
     )
     if (viaBom) return viaBom
-    const baseName = (material.name || "").replace(/^Machined\s+/i, "").trim()
-    if (baseName) {
-      const viaName = finalStock.find((p) => p.name === baseName)
-      if (viaName) return viaName
-    }
     return null
   }
 
@@ -107,7 +104,7 @@ export default function MachiningPage() {
     }
 
     const batch: Omit<Batch, "id" | "batchId"> = {
-      productId: product.id,
+      productId: product.productId || product.id,
       productName: product.name,
       quantityToBuild,
       totalMaterialQuantity,
@@ -160,8 +157,40 @@ export default function MachiningPage() {
     return [...materialItems, ...finalStockItems].sort((a, b) => a.urgency - b.urgency)
   }, [finishedMaterials, finalStock])
 
-  const handleCreateBatch = async (material: RawMaterial) => {
-    const product = getProductForMaterial(material)
+  const filteredItems = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return allItems
+
+    return allItems.filter((item) => {
+      if (item.type === "material") {
+        const { material, product } = item
+        const pid = (product ? (product.productId || product.id) : "").toLowerCase()
+        const name = (product?.name || material.name || "").toLowerCase()
+        const sku = (material.sku || "").toLowerCase()
+        const systemId = (material.id || "").toLowerCase()
+        return (
+          systemId.includes(query) ||
+          pid.includes(query) ||
+          sku.includes(query) ||
+          name.includes(query)
+        )
+      } else {
+        const { product } = item
+        const systemId = (product.id || "").toLowerCase()
+        const pid = (product.productId || product.id || "").toLowerCase()
+        const name = (product.name || "").toLowerCase()
+        const sku = (product.sku || "").toLowerCase()
+        return (
+          systemId.includes(query) ||
+          pid.includes(query) ||
+          sku.includes(query) ||
+          name.includes(query)
+        )
+      }
+    })
+  }, [allItems, searchQuery])
+
+  const handleCreateBatch = async (material: RawMaterial, product: FinalStock | null) => {
     if (!product) {
       toast({ variant: "destructive", title: "No Linked Product", description: "Could not determine the product for this machined material." })
       return
@@ -217,7 +246,7 @@ export default function MachiningPage() {
     }
 
     const batch: Omit<Batch, "id" | "batchId"> = {
-      productId: product.id,
+      productId: product.productId || product.id,
       productName: product.name,
       quantityToBuild,
       totalMaterialQuantity,
@@ -263,23 +292,34 @@ export default function MachiningPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
           <CardTitle>Items List</CardTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsItemsExpanded(!isItemsExpanded)}
-          >
-            {isItemsExpanded ? (
-              <>
-                <ChevronUp className="h-4 w-4 mr-2" />
-                Collapse
-              </>
-            ) : (
-              <>
-                <ChevronDown className="h-4 w-4 mr-2" />
-                Expand
-              </>
-            )}
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by ID, Product ID, SKU, or Name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 w-64"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsItemsExpanded(!isItemsExpanded)}
+            >
+              {isItemsExpanded ? (
+                <>
+                  <ChevronUp className="h-4 w-4 mr-2" />
+                  Collapse
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-4 w-4 mr-2" />
+                  Expand
+                </>
+              )}
+            </Button>
+          </div>
         </CardHeader>
         {isItemsExpanded && (
           <CardContent className="pt-6">
@@ -297,7 +337,7 @@ export default function MachiningPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {allItems.map((item) => {
+              {filteredItems.map((item) => {
                 if (item.type === "material") {
                   const { material, product, threshold } = item
                   return (
@@ -327,7 +367,7 @@ export default function MachiningPage() {
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleCreateBatch(material)}>
+                              <AlertDialogAction onClick={() => handleCreateBatch(material, product || null)}>
                                 Confirm
                               </AlertDialogAction>
                             </AlertDialogFooter>
