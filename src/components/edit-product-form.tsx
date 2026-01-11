@@ -53,7 +53,7 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
     assembled: product.assembledThreshold ?? 0,
   });
   const { toast } = useToast();
-  const { createRawMaterial, mouldedMaterials, finishedMaterials, assembledMaterials } = useRawMaterials();
+  const { createRawMaterial, rawMaterials, mouldedMaterials, finishedMaterials, assembledMaterials } = useRawMaterials();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -146,16 +146,33 @@ export function EditProductForm({ product, onProductUpdated }: EditProductFormPr
   };
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    // keep only valid BOM rows (no stage enforcement)
-    const validBomRows = bomRows.filter(
-      (r) => r.raw_material_id && r.stage && Number(r.qty_per_piece) > 0,
-    );
-    // No validation/enforcement that BOM stages match selected manufacturing stages
-
     // Determine product-level unit intents from BOM rows
     const MOULDED_PLACEHOLDER = "__MOULDED_UNIT__";
     const MACHINED_PLACEHOLDER = "__MACHINED_UNIT__";
     const ASSEMBLED_PLACEHOLDER = "__ASSEMBLED_UNIT__";
+
+    // keep only valid BOM rows (no stage enforcement) and drop rows
+    // whose raw_material_id refers to a deleted/missing raw material
+    const existingMaterialIds = new Set(rawMaterials.map((m) => m.id));
+    const validBomRows = bomRows.filter((r) => {
+      if (!r.raw_material_id || !r.stage || Number(r.qty_per_piece) <= 0) {
+        return false;
+      }
+
+      if (
+        r.raw_material_id === MOULDED_PLACEHOLDER ||
+        r.raw_material_id === MACHINED_PLACEHOLDER ||
+        r.raw_material_id === ASSEMBLED_PLACEHOLDER
+      ) {
+        return true;
+      }
+
+      if (r.source === "final") {
+        return true;
+      }
+
+      return existingMaterialIds.has(r.raw_material_id);
+    });
 
     const wantMoulded = validBomRows.some(
       (r) => r.stage === "Machining" && (r.raw_material_id === MOULDED_PLACEHOLDER || mouldedMaterials.some((m) => m.id === r.raw_material_id))

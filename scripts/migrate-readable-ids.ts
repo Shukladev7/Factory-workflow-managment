@@ -16,9 +16,10 @@
  *   APPLY_CHANGES=true DELETE_OLD=true SERVICE_ACCOUNT_PATH="/path/to/service-account.json" npx tsx scripts/migrate-readable-ids.ts
  */
 
-import admin from "firebase-admin";
-import fs from "fs";
-import path from "path";
+import "dotenv/config";
+import { initializeApp, cert, getApps, getApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+
 
 const APPLY_CHANGES = process.env.APPLY_CHANGES === "true";
 const DELETE_OLD = process.env.DELETE_OLD === "true";
@@ -26,39 +27,26 @@ const DELETE_OLD = process.env.DELETE_OLD === "true";
 function initAdmin() {
   if (admin.apps.length) return;
 
-  const googleCreds = process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.SERVICE_ACCOUNT_PATH;
-  if (googleCreds) {
-    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS && process.env.SERVICE_ACCOUNT_PATH) {
-      const p = path.resolve(process.env.SERVICE_ACCOUNT_PATH);
-      if (!fs.existsSync(p)) {
-        console.error("Service account file not found at:", p);
-        process.exit(1);
-      }
-      const serviceAccount = JSON.parse(fs.readFileSync(p, "utf8"));
-      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-      return;
-    } else {
-      admin.initializeApp();
-      return;
-    }
+  if (
+    !process.env.FIREBASE_PROJECT_ID ||
+    !process.env.FIREBASE_CLIENT_EMAIL ||
+    !process.env.FIREBASE_PRIVATE_KEY
+  ) {
+    console.error("Missing Firebase admin environment variables");
+    process.exit(1);
   }
 
-  const { FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY } = process.env;
-  if (FIREBASE_PROJECT_ID && FIREBASE_CLIENT_EMAIL && FIREBASE_PRIVATE_KEY) {
-    const privateKey = FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n");
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: FIREBASE_PROJECT_ID,
-        clientEmail: FIREBASE_CLIENT_EMAIL,
-        privateKey,
-      } as admin.ServiceAccount),
-    });
-    return;
-  }
+  const app = initializeApp({
+    credential: cert({
+      projectId: process.env.FIREBASE_PROJECT_ID!,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, "\n"),
+    }),
+  });
 
-  console.error("No admin credentials found. Set GOOGLE_APPLICATION_CREDENTIALS, SERVICE_ACCOUNT_PATH, or FIREBASE_* env vars.");
-  process.exit(1);
+  admin.initializeApp(app.options);
 }
+
 
 function pad(n: number, width = 3) {
   return String(n).padStart(width, "0");
@@ -167,6 +155,52 @@ async function main() {
             ...m,
             id: maps.rawMaterials[m.id] || maps.finalStock[m.id] || m.id,
           }));
+        }
+      }
+
+      if (name === "finalStock") {
+        if (typeof (transformed as any).mouldedMaterialId === "string") {
+          (transformed as any).mouldedMaterialId =
+            maps.rawMaterials[(transformed as any).mouldedMaterialId] ||
+            (transformed as any).mouldedMaterialId;
+        }
+
+        if (typeof (transformed as any).machinedMaterialId === "string") {
+          (transformed as any).machinedMaterialId =
+            maps.rawMaterials[(transformed as any).machinedMaterialId] ||
+            (transformed as any).machinedMaterialId;
+        }
+
+        if (typeof (transformed as any).assembledMaterialId === "string") {
+          (transformed as any).assembledMaterialId =
+            maps.rawMaterials[(transformed as any).assembledMaterialId] ||
+            (transformed as any).assembledMaterialId;
+        }
+
+        if (Array.isArray((transformed as any).bom_per_piece)) {
+          (transformed as any).bom_per_piece = (transformed as any).bom_per_piece.map(
+            (row: any) => {
+              const source = row.source as "raw" | "final" | undefined;
+              const rawId = row.raw_material_id;
+
+              let mappedId = rawId;
+              if (typeof rawId === "string") {
+                if (source === "final") {
+                  mappedId = maps.finalStock[rawId] || rawId;
+                } else {
+                  mappedId =
+                    maps.rawMaterials[rawId] ||
+                    maps.finalStock[rawId] ||
+                    rawId;
+                }
+              }
+
+              return {
+                ...row,
+                raw_material_id: mappedId,
+              };
+            },
+          );
         }
       }
 

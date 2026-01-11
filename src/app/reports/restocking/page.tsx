@@ -13,6 +13,7 @@ import type { RestockRecord } from "@/lib/types"
 import { orderBy } from "firebase/firestore"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { useFinalStock } from "@/hooks/use-final-stock"
 
 export default function RestockingReportsPage() {
   const { canEdit, loading: permissionsLoading } = usePermissions()
@@ -25,6 +26,8 @@ export default function RestockingReportsPage() {
 
   const [from, setFrom] = useState<string>("")
   const [to, setTo] = useState<string>("")
+
+  const { finalStock } = useFinalStock()
 
   const rows = useMemo(() => restocks || [], [restocks])
 
@@ -122,6 +125,8 @@ export default function RestockingReportsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Restock Date</TableHead>
+                <TableHead>Product ID / System ID</TableHead>
+                <TableHead>SKU</TableHead>
                 <TableHead>Product Name</TableHead>
                 <TableHead>Company Name</TableHead>
                 <TableHead className="text-right">Quantity Added</TableHead>
@@ -132,13 +137,13 @@ export default function RestockingReportsPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center">
+                  <TableCell colSpan={7} className="h-24 text-center">
                     Loading restocking data...
                   </TableCell>
                 </TableRow>
               ) : filteredRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                     No restocking records found.
                   </TableCell>
                 </TableRow>
@@ -148,11 +153,24 @@ export default function RestockingReportsPage() {
                     <TableCell>
                       {r.restockDate ? new Date(r.restockDate).toLocaleDateString() : "-"}
                     </TableCell>
-                    <TableCell>{r.productName}</TableCell>
-                    <TableCell>{r.companyName}</TableCell>
-                    <TableCell className="text-right">{r.quantityAdded}</TableCell>
-                    <TableCell className="text-right">{r.previousStock}</TableCell>
-                    <TableCell className="text-right">{r.updatedStock}</TableCell>
+                    {(() => {
+                      const product = finalStock.find(
+                        (p) => p.id === r.productId || p.productId === r.productId,
+                      )
+                      const displayId = product?.productId || product?.id || "—"
+                      const sku = product?.sku || "—"
+                      return (
+                        <>
+                          <TableCell className="font-mono text-xs">{displayId}</TableCell>
+                          <TableCell className="font-mono text-xs">{sku}</TableCell>
+                          <TableCell>{r.productName}</TableCell>
+                          <TableCell>{r.companyName}</TableCell>
+                          <TableCell className="text-right">{r.quantityAdded}</TableCell>
+                          <TableCell className="text-right">{r.previousStock}</TableCell>
+                          <TableCell className="text-right">{r.updatedStock}</TableCell>
+                        </>
+                      )
+                    })()}
                   </TableRow>
                 ))
               )}

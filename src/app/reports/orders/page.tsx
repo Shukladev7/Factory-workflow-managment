@@ -8,24 +8,35 @@ import { useOrders } from "@/hooks/use-orders"
 import { usePermissions } from "@/hooks/use-permissions"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ShieldX } from "lucide-react"
+import { useFinalStock } from "@/hooks/use-final-stock"
 
 export default function OrderReportsPage() {
   const { orders, loading: ordersLoading } = useOrders()
   const { canEdit, loading: permissionsLoading } = usePermissions()
+  const { finalStock } = useFinalStock()
   
   const canAccessOrderReports = canEdit("Reports")
 
   const rows = useMemo(() => {
-    return orders.map((o) => ({
-      dateISO: o.createdAt,
-      date: new Date(o.createdAt),
-      orderId: o.orderId,
-      name: o.name,
-      productName: o.productName,
-      quantity: o.quantity,
-      orderType: o.orderType,
-    }))
-  }, [orders])
+    return orders.map((o) => {
+      const product = finalStock.find(
+        (p) => p.id === o.productId || p.productId === o.productId,
+      )
+
+      return {
+        dateISO: o.createdAt,
+        date: new Date(o.createdAt),
+        orderId: o.orderId,
+        name: o.name,
+        productName: o.productName,
+        quantity: o.quantity,
+        orderType: o.orderType,
+        productSystemId: product?.id || "",
+        productPid: product?.productId || "",
+        productSku: product?.sku || "",
+      }
+    })
+  }, [orders, finalStock])
 
   if (permissionsLoading || ordersLoading) {
     return (

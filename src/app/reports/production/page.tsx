@@ -9,6 +9,7 @@ import { durationBetween } from "@/lib/utils"
 import { usePermissions } from "@/hooks/use-permissions"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ShieldX } from "lucide-react"
+import { useFinalStock } from "@/hooks/use-final-stock"
 
 function getFinalOutputForBatch(batch: Batch): number {
   // Final output preference for Production report (exclude Testing):
@@ -70,6 +71,7 @@ function calculateRawMaterialWastage(batch: Batch): Record<string, number> {
 export default function ProductionReportsPage() {
   const [batches, setBatches] = useState<Batch[]>([])
   const { canEdit, loading: permissionsLoading } = usePermissions()
+  const { finalStock } = useFinalStock()
   
   const canAccessReports = canEdit("Reports")
 
@@ -97,6 +99,10 @@ export default function ProductionReportsPage() {
       const producedUnits = getFinalOutputForBatch(b)
       const rawMaterialWastage = calculateRawMaterialWastage(b)
 
+      const product = finalStock.find(
+        (p) => p.id === b.productId || p.productId === b.productId,
+      )
+
       return {
         dateISO: b.createdAt,
         date: new Date(b.createdAt),
@@ -106,6 +112,9 @@ export default function ProductionReportsPage() {
         producedUnits,
         rejectedUnits,
         rawMaterialWastage,
+        productSystemId: product?.id || "",
+        productPid: product?.productId || "",
+        productSku: product?.sku || "",
         // durations: {
         //   Molding: moldingDone ? durationBetween(s?.Molding?.startedAt, s?.Molding?.finishedAt) : undefined,
         //   Machining: finishingDone ? durationBetween(s?.Machining?.startedAt, s?.Machining?.finishedAt) : undefined,
@@ -115,7 +124,7 @@ export default function ProductionReportsPage() {
         batch: b, // Pass full batch for reference
       }
     })
-  }, [batches])
+  }, [batches, finalStock])
 
   if (permissionsLoading) {
     return (

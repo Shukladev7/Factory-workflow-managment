@@ -13,6 +13,9 @@ type OrderReportRow = {
   productName: string
   quantity: number
   orderType: string
+  productSystemId?: string
+  productPid?: string
+  productSku?: string
 }
 
 function toRowDate(r: OrderReportRow) {
@@ -89,13 +92,25 @@ export default function OrderReportsTable({ rows }: { rows: OrderReportRow[] }) 
   )
 
   function downloadCSV() {
-    const headers = ["Date", "Order ID", "Product Name", "Quantity", "Order Type"]
+    const headers = [
+      "Date",
+      "Order ID",
+      "Product ID / System ID",
+      "SKU",
+      "Product Name",
+      "Quantity",
+      "Order Type",
+    ]
     const lines = [headers.join(",")]
     for (const r of filtered) {
       const d = toRowDate(r)
+      const displayId = (r.productPid || r.productSystemId || "").replaceAll(",", " ")
+      const sku = (r.productSku || "").replaceAll(",", " ")
       const row = [
         formatYMD(d),
         r.orderId,
+        displayId,
+        sku,
         r.productName.replaceAll(",", " "),
         String(r.quantity ?? 0),
         r.orderType,
@@ -161,6 +176,8 @@ export default function OrderReportsTable({ rows }: { rows: OrderReportRow[] }) 
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Order ID</TableHead>
+              <TableHead>Product ID / System ID</TableHead>
+              <TableHead>SKU</TableHead>
               <TableHead>Product</TableHead>
               <TableHead className="text-right">Quantity</TableHead>
               <TableHead>Order Type</TableHead>
@@ -169,7 +186,7 @@ export default function OrderReportsTable({ rows }: { rows: OrderReportRow[] }) 
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-center text-muted-foreground">
                   No records match your filters.
                 </TableCell>
               </TableRow>
@@ -180,6 +197,8 @@ export default function OrderReportsTable({ rows }: { rows: OrderReportRow[] }) 
                   <TableRow key={`${r.orderId}-${formatYMD(d)}`}>
                     <TableCell>{formatHuman(d)}</TableCell>
                     <TableCell className="font-mono text-sm">{r.orderId}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.productPid || r.productSystemId || "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.productSku || "—"}</TableCell>
                     <TableCell>{r.productName}</TableCell>
                     <TableCell className="text-right font-medium">{formatNumber(r.quantity || 0)}</TableCell>
                     <TableCell>{r.orderType}</TableCell>

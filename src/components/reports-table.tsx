@@ -12,6 +12,9 @@ type ReportRow = {
   date: string | Date
   batchId: string
   productName: string
+  productSystemId?: string
+  productPid?: string
+  productSku?: string
   status: string
   producedUnits: number
   rawMaterialWastage: Record<string, number> // material name -> wastage amount
@@ -267,6 +270,8 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
     const headers = [
       "Date",
       "Batch ID",
+      "Product ID / System ID",
+      "SKU",
       "Product",
       "Status",
       "Produced Units",
@@ -286,9 +291,13 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
       const rawInputPerMaterial = formatMaterialMap(calculateRawMaterialInputPerMaterial(r.batch))
       const actualPerMaterial = formatMaterialMap(calculateActualConsumptionPerMaterial(r.batch))
       const wastageString = formatRawMaterialWastage(r.rawMaterialWastage)
+      const displayId = (r.productPid || r.productSystemId || "").replaceAll(",", " ")
+      const sku = (r.productSku || "").replaceAll(",", " ")
       const row = [
         formatYMD(d),
         r.batchId,
+        displayId,
+        sku,
         `${finalStage ? `${finalStage} - ` : ""}${r.productName}`.replaceAll(",", " "),
         r.status,
         String(r.producedUnits ?? 0),
@@ -321,7 +330,7 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
     setBatchQuery("")
   }
 
-  const totalColumns = 7 // Date, Batch ID, Product, Produced Units, Raw Material Input, Actual Consumption, Raw Material Wastage
+  const totalColumns = 9 // Date, Batch ID, Product ID / System ID, SKU, Product, Produced Units, Raw Material Input, Actual Consumption, Raw Material Wastage
 
   return (
     <div className="space-y-4">
@@ -363,12 +372,14 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
             <TableRow>
               <TableHead className="text-center font-medium">Date</TableHead>
               <TableHead className="text-center font-medium">Batch ID</TableHead>
+              <TableHead className="text-center font-medium">Product ID / System ID</TableHead>
+              <TableHead className="text-center font-medium">SKU</TableHead>
               <TableHead className="text-center font-medium">Product</TableHead>
               {/* <TableHead>Status</TableHead> */}
               <TableHead className="text-center font-medium">Produced Units</TableHead>
               <TableHead>Raw Material Input</TableHead>
               <TableHead>Actual Consumption</TableHead>
-              <TableHead >Raw Material Wastage</TableHead>
+              <TableHead>Raw Material Wastage</TableHead>
               {/* <TableHead className="text-right">Molding Time</TableHead>
               <TableHead className="text-right">Machining Time</TableHead>
               <TableHead className="text-right">Assembling Time</TableHead>
@@ -394,6 +405,8 @@ export default function ReportsTable({ rows }: { rows: ReportRow[] }) {
                   <TableRow key={`${r.batchId}-${formatYMD(d)}`}>
                     <TableCell>{formatHuman(d)}</TableCell>
                     <TableCell className="font-mono text-sm">{r.batchId}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.productPid || r.productSystemId || "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.productSku || "—"}</TableCell>
                     <TableCell>{finalStage ? `${finalStage} - ` : ""}{r.productName}</TableCell>
                     {/* <TableCell>{r.status}</TableCell> */}
                     <TableCell className="text-center font-medium">{formatNumber(r.producedUnits || 0)}</TableCell>

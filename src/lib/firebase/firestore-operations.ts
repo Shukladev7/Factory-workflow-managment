@@ -71,6 +71,16 @@ export async function updateRawMaterial(
   updates: Partial<RawMaterial>,
 ) {
   const materialRef = doc(db, COLLECTIONS.RAW_MATERIALS, id);
+  // Gracefully handle missing documents so callers (e.g. Final Stock edits
+  // syncing thresholds) don't crash if a raw material was deleted earlier.
+  const snapshot = await getDoc(materialRef);
+  if (!snapshot.exists()) {
+    console.warn(
+      `[updateRawMaterial] Skipping update for non-existent raw material ${id}. It may have been deleted.`,
+    );
+    return;
+  }
+
   await updateDoc(materialRef, updates);
 }
 

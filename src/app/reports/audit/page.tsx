@@ -18,6 +18,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 interface EnrichedLog extends ActivityLog {
   entityType: "RawMaterial" | "FinalStockItem" | "StoreItem" | "Batch" | "Unknown"
   entityName?: string
+  entitySystemId?: string
+  entityProductId?: string
+  entitySku?: string
 }
 
 const PAGE_SIZE = 25
@@ -53,21 +56,29 @@ export default function AuditTrailPage() {
     return activityLog.map((log) => {
       let entityType: EnrichedLog["entityType"] = "Unknown"
       let entityName: string | undefined
+      let entitySystemId: string | undefined = log.recordId
+      let entityProductId: string | undefined
+      let entitySku: string | undefined
 
       if (log.recordType === "RawMaterial") {
         const material = rawMap.get(log.recordId)
         const isStoreItem = !!material && (material.isMoulded || material.isFinished || material.isAssembled)
         entityType = isStoreItem ? "StoreItem" : "RawMaterial"
         entityName = material?.name
+        entitySystemId = material?.id ?? log.recordId
+        entitySku = material?.sku
       } else if (log.recordType === "FinalStock") {
         const product = finalStockMap.get(log.recordId)
         entityType = "FinalStockItem"
         entityName = product?.name
+        entitySystemId = product?.id ?? log.recordId
+        entityProductId = product?.productId
+        entitySku = product?.sku
       } else if (log.recordType === "Batch") {
         entityType = "Batch"
       }
 
-      return { ...log, entityType, entityName }
+      return { ...log, entityType, entityName, entitySystemId, entityProductId, entitySku }
     })
   }, [activityLog, rawMap, finalStockMap])
 
@@ -142,7 +153,7 @@ export default function AuditTrailPage() {
         <Alert variant="destructive" className="max-w-2xl">
           <ShieldX className="h-4 w-4" />
           <AlertDescription>
-            You don&apos;t have permission to access Reports. Only users with Reports edit permissions can view this page.
+            You don't have permission to access Reports. Only users with Reports edit permissions can view this page.
           </AlertDescription>
         </Alert>
       </div>
@@ -264,6 +275,8 @@ export default function AuditTrailPage() {
                 <TableHead>Action</TableHead>
                 <TableHead>Entity Type</TableHead>
                 <TableHead>Entity</TableHead>
+                <TableHead>Product ID / System ID</TableHead>
+                <TableHead>SKU</TableHead>
                 <TableHead>User</TableHead>
                 <TableHead>Details</TableHead>
               </TableRow>
@@ -271,13 +284,13 @@ export default function AuditTrailPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center">
+                  <TableCell colSpan={8} className="h-24 text-center">
                     Loading audit trail...
                   </TableCell>
                 </TableRow>
               ) : pageItems.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                     No audit records found for the selected filters.
                   </TableCell>
                 </TableRow>
@@ -298,6 +311,12 @@ export default function AuditTrailPage() {
                       ) : (
                         <span className="text-muted-foreground text-xs">{log.recordId}</span>
                       )}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">
+                      {log.entityProductId || log.entitySystemId || "—"}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">
+                      {log.entitySku || "—"}
                     </TableCell>
                     <TableCell className="text-xs">{log.user}</TableCell>
                     <TableCell className="text-xs max-w-xl whitespace-pre-wrap">

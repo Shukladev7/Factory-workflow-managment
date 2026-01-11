@@ -49,7 +49,7 @@ export function CreateProductForm({
   const [manufacturingStages, setManufacturingStages] = useState<ProcessingStageName[]>([]);
   const [unitThresholds, setUnitThresholds] = useState<{ moulded?: number; machined?: number; assembled?: number }>({});
   const { toast } = useToast();
-  const { createRawMaterial, mouldedMaterials, finishedMaterials, assembledMaterials } = useRawMaterials();
+  const { createRawMaterial, rawMaterials, mouldedMaterials, finishedMaterials, assembledMaterials } = useRawMaterials();
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -120,12 +120,33 @@ export function CreateProductForm({
   async function onSubmit(values: z.infer<typeof formSchema>) {
     const { hasManufacturingDetails } = values;
 
+    const MOULDED_PLACEHOLDER = "__MOULDED_UNIT__";
+    const MACHINED_PLACEHOLDER = "__MACHINED_UNIT__";
+    const ASSEMBLED_PLACEHOLDER = "__ASSEMBLED_UNIT__";
+
     let validBomRows: BOMRow[] = [];
 
     if (hasManufacturingDetails) {
-      validBomRows = bomRows.filter(
-        (row) => row.raw_material_id && row.stage && row.qty_per_piece > 0,
-      );
+      const existingMaterialIds = new Set(rawMaterials.map((m) => m.id));
+      validBomRows = bomRows.filter((row) => {
+        if (!row.raw_material_id || !row.stage || row.qty_per_piece <= 0) {
+          return false;
+        }
+
+        if (
+          row.raw_material_id === MOULDED_PLACEHOLDER ||
+          row.raw_material_id === MACHINED_PLACEHOLDER ||
+          row.raw_material_id === ASSEMBLED_PLACEHOLDER
+        ) {
+          return true;
+        }
+
+        if (row.source === "final") {
+          return true;
+        }
+
+        return existingMaterialIds.has(row.raw_material_id);
+      });
     }
 
     const measurementSketch = form.getValues("measurementSketch") as
@@ -133,9 +154,6 @@ export function CreateProductForm({
       | undefined;
 
     // Determine product-level unit intents from BOM rows
-    const MOULDED_PLACEHOLDER = "__MOULDED_UNIT__";
-    const MACHINED_PLACEHOLDER = "__MACHINED_UNIT__";
-    const ASSEMBLED_PLACEHOLDER = "__ASSEMBLED_UNIT__";
 
     const wantMoulded = validBomRows.some(
       (r) => r.stage === "Machining" && (r.raw_material_id === MOULDED_PLACEHOLDER || mouldedMaterials.some((m) => m.id === r.raw_material_id))

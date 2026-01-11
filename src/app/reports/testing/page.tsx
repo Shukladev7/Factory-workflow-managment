@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { Batch } from "@/lib/types"
 import { subscribeToAllBatches } from "@/lib/firebase"
+import { useFinalStock } from "@/hooks/use-final-stock"
 
 export default function TestingReportPage() {
   const [batches, setBatches] = useState<Batch[]>([])
   const [from, setFrom] = useState("")
   const [to, setTo] = useState("")
+  const { finalStock } = useFinalStock()
 
   useEffect(() => {
     const unsubscribe = subscribeToAllBatches((all) => {
@@ -26,9 +28,15 @@ export default function TestingReportPage() {
   const rows = useMemo(() => {
     return (batches || []).map((b) => {
       const t = b.processingStages?.Testing || { accepted: 0, rejected: 0, actualConsumption: 0, completed: false }
+      const product = finalStock.find(
+        (p) => p.id === b.productId || p.productId === b.productId,
+      )
       return {
         id: b.id,
         productName: b.productName,
+        productSystemId: product?.id || "",
+        productPid: product?.productId || "",
+        productSku: product?.sku || "",
         quantityToBuild: b.quantityToBuild,
         status: b.status,
         accepted: t.accepted ?? 0,
@@ -40,7 +48,7 @@ export default function TestingReportPage() {
         createdAt: b.createdAt,
       }
     })
-  }, [batches])
+  }, [batches, finalStock])
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -72,6 +80,8 @@ export default function TestingReportPage() {
   function downloadCSV() {
     const headers = [
       "Batch ID",
+      "Product ID / System ID",
+      "SKU",
       "Product",
       "Qty",
       "Accepted",
@@ -83,6 +93,8 @@ export default function TestingReportPage() {
     for (const r of filtered) {
       const row = [
         r.id,
+        (r.productPid || r.productSystemId || "").replaceAll(",", " "),
+        (r.productSku || "").replaceAll(",", " "),
         (r.productName || "").replaceAll(",", " "),
         String((r.accepted ?? 0) + (r.rejected ?? 0)),
         String(r.accepted ?? 0),
@@ -137,14 +149,12 @@ export default function TestingReportPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Batch ID</TableHead>
+                <TableHead>Product ID / System ID</TableHead>
+                <TableHead>SKU</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>Qty</TableHead>
-                
                 <TableHead>Accepted</TableHead>
                 <TableHead>Rejected Tested</TableHead>
-        
-            
-                
                 <TableHead>Created</TableHead>
                 <TableHead>Finished</TableHead>
               </TableRow>
@@ -152,7 +162,7 @@ export default function TestingReportPage() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="h-24 text-center">
+                  <TableCell colSpan={9} className="h-24 text-center">
                     No testing records found
                   </TableCell>
                 </TableRow>
@@ -160,16 +170,14 @@ export default function TestingReportPage() {
                 filtered.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-mono text-xs">{r.id}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.productPid || r.productSystemId || "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.productSku || "—"}</TableCell>
                     <TableCell className="font-medium">{r.productName}</TableCell>
                     <TableCell>{(r.accepted ?? 0) + (r.rejected ?? 0)}</TableCell>
-                    
                     <TableCell>{r.accepted}</TableCell>
                     <TableCell>{r.rejected}</TableCell>
-                   
                     <TableCell>{fmt(r.createdAt)}</TableCell>
                     <TableCell>{fmt(r.finishedAt)}</TableCell>
-                   
-                    
                   </TableRow>
                 ))
               )}
