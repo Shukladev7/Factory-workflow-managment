@@ -1,0 +1,22 @@
+{
+  "placeholderImages": [
+    {
+      "id": "product_001",
+      "description": "A professionally packaged box of widgets.",
+      "imageUrl": "https://picsum.photos/seed/prod1/400/300",
+      "imageHint": "product box"
+    },
+    {
+      "id": "product_002",
+      "description": "A blue gadget on a clean background.",
+      "imageUrl": "https://picsum.photos/seed/prod2/400/300",
+      "imageHint": "electronic gadget"
+    },
+    {
+      "id": "product_003",
+      "description": "A set of industrial components.",
+      "imageUrl": "https://picsum.photos/seed/prod3/400/300",
+      "imageHint": "metal parts"
+    }
+  ]
+}

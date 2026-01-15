@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer base {
+  :root {
+    --background: 210 20% 96%;
+    --foreground: 202 39% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 202 39% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 202 39% 15%;
+    --primary: 202 39% 29%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 210 20% 90%;
+    --secondary-foreground: 202 39% 15%;
+    --muted: 210 20% 90%;
+    --muted-foreground: 202 20% 40%;
+    --accent: 182 31% 60%;
+    --accent-foreground: 202 39% 15%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 210 20% 88%;
+    --input: 210 20% 92%;
+    --ring: 182 31% 60%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+    --sidebar-background: 210 20% 98%;
+    --sidebar-foreground: 202 39% 15%;
+    --sidebar-primary: 202 39% 29%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 210 20% 92%;
+    --sidebar-accent-foreground: 202 39% 15%;
+    --sidebar-border: 210 20% 88%;
+    --sidebar-ring: 182 31% 60%;
+  }
+  .dark {
+    --background: 202 20% 10%;
+    --foreground: 0 0% 90%;
+    --card: 202 20% 15%;
+    --card-foreground: 0 0% 90%;
+    --popover: 202 20% 15%;
+    --popover-foreground: 0 0% 90%;
+    --primary: 182 31% 60%;
+    --primary-foreground: 202 39% 15%;
+    --secondary: 202 20% 25%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 202 20% 25%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 202 39% 29%;
+    --accent-foreground: 0 0% 90%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 202 20% 25%;
+    --input: 202 20% 25%;
+    --ring: 182 31% 60%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 202 20% 12%;
+    --sidebar-foreground: 0 0% 90%;
+    --sidebar-primary: 182 31% 60%;
+    --sidebar-primary-foreground: 202 39% 15%;
+    --sidebar-accent: 202 20% 20%;
+    --sidebar-accent-foreground: 0 0% 90%;
+    --sidebar-border: 202 20% 25%;
+    --sidebar-ring: 182 31% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground text-lg;
+  }
+}
+
+@layer utilities {
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
