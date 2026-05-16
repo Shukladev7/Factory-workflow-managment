@@ -1,0 +1,189 @@
+"use client"
+
+import PageHeader from "@/components/page-header"
+import { BatchStageProcessor } from "@/components/batch-stage-processor"
+import { useEffect, useMemo, useState } from "react"
+import { Card, CardContent } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import type { FinalStock, ProcessingStageName, RawMaterial } from "@/lib/types"
+import { useRawMaterials } from "@/hooks/use-raw-materials"
+import { useFinalStock } from "@/hooks/use-final-stock"
+import { useToast } from "@/hooks/use-toast"
+import { createBatch } from "@/lib/firebase"
+import { useActivityLog } from "@/hooks/use-activity-log"
+
+export default function TestingPage() {
+  const { mouldedMaterials, finishedMaterials, assembledMaterials } = useRawMaterials()
+  const { finalStock } = useFinalStock()
+  const { toast } = useToast()
+  const { createActivityLog } = useActivityLog()
+  const [isClient, setIsClient] = useState(false)
+
+  useEffect(() => setIsClient(true), [])
+
+  const getProductForMaterial = (material: RawMaterial, type: "moulded" | "machined" | "assembled"): FinalStock | null => {
+    if (!finalStock || finalStock.length === 0) return null
+    let product: FinalStock | undefined
+    if (type === "moulded") {
+      product = finalStock.find((p) => p.mouldedMaterialId === material.id)
+    } else if (type === "machined") {
+      product = finalStock.find((p) => p.machinedMaterialId === material.id)
+    } else {
+      product = finalStock.find((p) => p.assembledMaterialId === material.id)
+    }
+    if (product) return product
+    const viaBom = finalStock.find((p) => Array.isArray(p.bom_per_piece) && p.bom_per_piece.some((row) => row.raw_material_id === material.id))
+    if (viaBom) return viaBom
+    const name = material.name || ""
+    let baseName = name
+    if (type === "moulded") {
+      baseName = name.replace(/^Moulded\s+/i, "").trim()
+    } else if (type === "machined") {
+      baseName = name.replace(/^Machined\s+/i, "").trim()
+    } else {
+      baseName = name.replace(/^Assembled\s+/i, "").trim()
+    }
+    if (baseName) {
+      const viaName = finalStock.find((p) => p.name === baseName)
+      if (viaName) return viaName
+    }
+    return null
+  }
+
+  const getNextStageAfter = (product: FinalStock, baseStage: ProcessingStageName): ProcessingStageName | null => {
+    const stages = Array.isArray(product.manufacturingStages) ? product.manufacturingStages : []
+    if (stages.length === 0) return null
+    const idx = stages.indexOf(baseStage)
+    if (idx >= 0 && idx < stages.length - 1) return stages[idx + 1]
+    if (idx >= 0) return stages[idx]
+    return stages[0]
+  }
+
+  const testingCandidates = useMemo(() => {
+    const rows: Array<{ material: RawMaterial; type: "moulded" | "machined" | "assembled"; product: FinalStock }> = []
+    mouldedMaterials.forEach((m) => {
+      const product = getProductForMaterial(m, "moulded")
+      if (!product) return
+      const next = getNextStageAfter(product, "Molding")
+      if (next === "Testing") rows.push({ material: m, type: "moulded", product })
+    })
+    finishedMaterials.forEach((m) => {
+      const product = getProductForMaterial(m, "machined")
+      if (!product) return
+      const next = getNextStageAfter(product, "Machining")
+      if (next === "Testing") rows.push({ material: m, type: "machined", product })
+    })
+    assembledMaterials.forEach((m) => {
+      const product = getProductForMaterial(m, "assembled")
+      if (!product) return
+      const next = getNextStageAfter(product, "Assembling")
+      if (next === "Testing") rows.push({ material: m, type: "assembled", product })
+    })
+    return rows
+  }, [mouldedMaterials, finishedMaterials, assembledMaterials, finalStock])
+
+  const displayThresholdFor = (material: RawMaterial, product: FinalStock, type: "moulded" | "machined" | "assembled") => {
+    const productThreshold = type === "moulded" ? product.mouldedThreshold : type === "machined" ? product.machinedThreshold : product.assembledThreshold
+    if (material.threshold && material.threshold > 0) return material.threshold
+    return productThreshold ?? 0
+  }
+
+  const handleTest = async (material: RawMaterial, product: FinalStock) => {
+    if ((Number(material.quantity) || 0) < 1) {
+      toast({ variant: "destructive", title: "Insufficient Quantity", description: "Cannot create Testing batch. Item quantity must be at least 1." })
+      return
+    }
+    try {
+      const processingStages: Record<ProcessingStageName, any> = {
+        Molding: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
+        Machining: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
+        Assembling: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
+        Testing: { accepted: 0, rejected: 0, actualConsumption: 0, completed: false },
+      }
+      const docId = await createBatch({
+        productId: product.id,
+        productName: product.name,
+        quantityToBuild: 1,
+        totalMaterialQuantity: 1,
+        materials: [
+          { id: material.id, name: material.name, quantity: 1, unit: material.unit, stage: "Testing" },
+        ],
+        createdAt: new Date().toISOString(),
+        status: "Planned",
+        processingStages,
+        selectedProcesses: ["Testing"],
+      })
+      await createActivityLog({
+        recordId: docId,
+        recordType: "Batch",
+        action: "Created",
+        details: `Testing batch created from store item ${material.name} for product ${product.name}`,
+        timestamp: new Date().toISOString(),
+        user: "System",
+      })
+      toast({ title: "Batch Created", description: `Batch ${docId} created for Testing.` })
+    } catch (e) {
+      toast({ variant: "destructive", title: "Error", description: "Failed to create Testing batch." })
+    }
+  }
+
+  if (!isClient) return null
+
+  return (
+    <>
+      <PageHeader
+        title="Testing Stage"
+        description="Process batches in the testing stage. Log accepted and rejected units."
+      />
+
+      <Card>
+        <CardContent className="pt-6">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>System ID</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>SKU</TableHead>
+                <TableHead>Quantity</TableHead>
+                <TableHead>Min Threshold</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right w-[100px]">Test</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {testingCandidates.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center">No store items ready for Testing</TableCell>
+                </TableRow>
+              ) : (
+                testingCandidates.map(({ material, product, type }) => {
+                  const threshold = displayThresholdFor(material, product, type)
+                  const status = material.quantity <= threshold ? "Low Stock" : "Normal"
+                  return (
+                    <TableRow key={material.id}>
+                      <TableCell className="font-mono text-xs">{material.id}</TableCell>
+                      <TableCell className="font-medium">{material.name}</TableCell>
+                      <TableCell className="font-mono text-xs">{material.sku}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{material.quantity.toLocaleString()} {material.unit}</Badge>
+                      </TableCell>
+                      <TableCell>{threshold}</TableCell>
+                      <TableCell>{status}</TableCell>
+                      <TableCell className="text-right">
+                        <Button size="sm" onClick={() => handleTest(material, product)}>Test</Button>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <BatchStageProcessor stage="Testing" previousStage="Assembling" />
+    </>
+  )
+}
